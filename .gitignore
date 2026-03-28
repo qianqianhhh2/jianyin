@@ -1,0 +1,46 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# Android Studio
+.idea/
+*.iml
+.DS_Store
+
+# Local configuration file
+local.properties
+
+# Log files
+*.log
+
+# Generated files
+*.apk
+*.ap_
+*.aab
+
+# External libraries
+/captures
+
+# Android Profiling
+*.hprof
+
+# Keystore files
+*.jks
+*.keystore
+
+# Build outputs
+**/build/
+**/release/
+
+# IDE
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+.DS_Store

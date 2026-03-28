@@ -1,0 +1,71 @@
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+}
+
+android {
+    namespace 'com.qian.jianyin'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.qian.jianyin'
+        minSdk 24
+        targetSdk 34
+        versionCode 3
+        versionName '3.0'
+    }
+
+    buildFeatures {
+        compose true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
+}
+
+dependencies {
+    // 基础 AndroidX 库
+    implementation libs.androidx.core.ktx
+    implementation libs.androidx.appcompat
+    implementation libs.material
+    
+    // Compose
+    implementation "androidx.compose.material3:material3:1.2.0"
+    implementation "androidx.compose.ui:ui:1.6.0"
+    implementation "androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0"
+    implementation "androidx.activity:activity-compose:1.8.2"
+    implementation "androidx.compose.material:material-icons-extended:1.6.0"
+    implementation "androidx.navigation:navigation-compose:2.7.0"
+
+    // Media3 播放器
+    def media3_version = "1.3.0"
+    implementation "androidx.media3:media3-exoplayer:$media3_version"
+    implementation "androidx.media3:media3-session:$media3_version"
+    
+    // 关键添加：AndroidX Media 库（必须！用于 MediaSessionCompat 和 MediaStyle）
+    implementation "androidx.media:media:1.7.0"
+    
+    // 可选添加：Media3 UI 组件（包含 PlayerNotificationManager）
+    implementation "androidx.media3:media3-ui:$media3_version"
+
+    // Network & JSON
+    implementation "com.squareup.retrofit2:retrofit:2.9.0"
+    implementation "com.squareup.retrofit2:converter-gson:2.9.0"
+    implementation "com.squareup.retrofit2:converter-scalars:2.9.0"
+    implementation "com.google.code.gson:gson:2.10.1"
+    
+    // Image
+    implementation "io.coil-kt:coil-compose:2.5.0"
+    
+    // UI 效果
+    implementation "com.github.skydoves:cloudy:0.1.2"
+}
