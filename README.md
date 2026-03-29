@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![简音 Logo](images/logo.png)
+![简音 Logo](images/logo.png){: width="200" height="200"}
 
 **一个基于 Meting API 的现代化音乐播放器**
 
