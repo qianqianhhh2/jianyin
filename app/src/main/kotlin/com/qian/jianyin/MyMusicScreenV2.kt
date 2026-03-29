@@ -61,7 +61,7 @@ fun MyMusicScreenV2(vm: MusicViewModel) {
     var showBackupDialog by remember { mutableStateOf(false) }
     var useCustomPath by remember { mutableStateOf(false) }
     var customPathInput by remember { mutableStateOf("") }
-    val appVersion = remember { "1.0.0" } // 应用版本
+    val appVersion = remember { "3.0.0" } // 应用版本
 
     val statsManager = remember { MusicStatsManager(context) }
     val favoriteSongs = statsManager.getTopFavorites(vm.historyList)
@@ -921,7 +921,7 @@ Text(
                                     // GitHub 图标
                                     IconButton(
                                         onClick = {
-                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/qian"))
+                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/qianqianhhh2"))
                                             context.startActivity(intent)
                                         },
                                         modifier = Modifier.size(40.dp)
@@ -1017,7 +1017,7 @@ Text(
                         item {
                             Surface(
                                 onClick = {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/qianqianhhh2/jianyin/zan.jpg"))
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://ifdian.net/a/qianqiantwt"))
                                     context.startActivity(intent)
                                 },
                                 shape = RoundedCornerShape(16.dp),
