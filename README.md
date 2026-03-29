@@ -2,15 +2,15 @@
 
 <div align="center">
 
-!\[简音 Logo]\(images/logo.png null)
+![简音 Logo](images/logo.png)
 
 **一个基于 Meting API 的现代化音乐播放器**
 
-[!\[Android API\](https://img.shields.io/badge/API-21%2B-brightgreen.svg?style=flat-square null)](https://android-arsenal.com/api?level=21)
-[!\[Kotlin\](https://img.shields.io/badge/Kotlin-1.9.0-blue.svg?style=flat-square null)](https://kotlinlang.org)
-[!\[License\](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square null)](LICENSE)
-[!\[GitHub Stars\](https://img.shields.io/github/stars/qianqianhhh2/jianyin?style=flat-square null)](https://github.com/qianqianhhh2/jianyin/stargazers)
-[!\[GitHub Forks\](https://img.shields.io/github/forks/qianqianhhh2/jianyin?style=flat-square null)](https://github.com/qianqianhhh2/jianyin/network/members)
+[![Android API](https://img.shields.io/badge/API-21%2B-brightgreen.svg?style=flat-square)](https://android-arsenal.com/api?level=21)
+[![Kotlin](https://img.shields.io/badge/Kotlin-1.9.0-blue.svg?style=flat-square)](https://kotlinlang.org)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/qianqianhhh2/jianyin?style=flat-square)](https://github.com/qianqianhhh2/jianyin/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/qianqianhhh2/jianyin?style=flat-square)](https://github.com/qianqianhhh2/jianyin/network/members)
 
 [下载 APK](https://github.com/qianqianhhh2/jianyin/releases) · [报告 Bug](https://github.com/qianqianhhh2/jianyin/issues) · [功能建议](https://github.com/qianqianhhh2/jianyin/issues)
 
