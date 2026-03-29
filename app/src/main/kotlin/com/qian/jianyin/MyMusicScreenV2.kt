@@ -61,7 +61,7 @@ fun MyMusicScreenV2(vm: MusicViewModel) {
     var showBackupDialog by remember { mutableStateOf(false) }
     var useCustomPath by remember { mutableStateOf(false) }
     var customPathInput by remember { mutableStateOf("") }
-    val appVersion = remember { "3.0.0" } // 应用版本
+    val appVersion = remember { "3.0.1" } // 应用版本
 
     val statsManager = remember { MusicStatsManager(context) }
     val favoriteSongs = statsManager.getTopFavorites(vm.historyList)
@@ -460,56 +460,106 @@ fun MyMusicScreenV2(vm: MusicViewModel) {
                             
                             items(playlist.songs) { song ->
                                 var isDownloading by remember { mutableStateOf(false) }
+                                var showSongMenu by remember { mutableStateOf(false) }
+                                
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { vm.playSong(song, playlist.songs) }
-                                        .padding(horizontal = 20.dp, vertical = 10.dp), 
+                                        .combinedClickable(
+                                            onClick = { vm.playSong(song, playlist.songs) },
+                                            onLongClick = { showSongMenu = true }
+                                        )
+                                        .padding(horizontal = 20.dp, vertical = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     AsyncImage(
-                                        model = song.pic, 
-                                        contentDescription = null, 
+                                        model = song.pic,
+                                        contentDescription = null,
                                         modifier = Modifier
                                             .size(52.dp)
                                             .clip(RoundedCornerShape(10.dp))
-                                            .background(colorScheme.surfaceVariant), 
+                                            .background(colorScheme.surfaceVariant),
                                         contentScale = ContentScale.Crop
                                     )
                                     Column(Modifier.padding(start = 16.dp).weight(1f)) {
                                         Text(song.name, color = colorScheme.onBackground, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         Text(song.artist, color = colorScheme.onSurfaceVariant, fontSize = 13.sp, maxLines = 1)
                                     }
+                                    // 播放按钮
+                                    IconButton(
+                                        onClick = { vm.playSong(song, playlist.songs) },
+                                        modifier = Modifier.size(40.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.PlayArrow,
+                                            contentDescription = "播放",
+                                            tint = colorScheme.primary,
+                                            modifier = Modifier.size(28.dp)
+                                        )
+                                    }
+                                    
+                                    // 歌曲操作菜单弹窗
+                                    if (showSongMenu) {
+                                        AlertDialog(
+                                            onDismissRequest = { showSongMenu = false },
+                                            title = { Text(song.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                            text = { Text("选择操作") },
+                                            confirmButton = {
+                                                TextButton(
+                                                    onClick = {
+                                                        showSongMenu = false
+                                                        isDownloading = true
+                                                        scope.launch {
+                                                            val customPath = if (DownloadSettingsStore.isUsingCustomPath(context)) DownloadSettingsStore.getCustomPath(context) else null
+                                                            DownloadManager.downloadSong(context, song, customPath)
+                                                                .onSuccess {
+                                                                    Toast.makeText(context, "下载完成: ${song.name}", Toast.LENGTH_LONG).show()
+                                                                }
+                                                                .onFailure { e ->
+                                                                    Toast.makeText(context, "下载失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                                }
+                                                            isDownloading = false
+                                                        }
+                                                    }
+                                                ) {
+                                                    Text("下载")
+                                                }
+                                            },
+                                            dismissButton = {
+                                                TextButton(
+                                                    onClick = {
+                                                        showSongMenu = false
+                                                        // 从歌单移除歌曲
+                                                        val removed = PlaylistDataStore.removeSongFromPlaylist(context, playlist.id, song)
+                                                        if (removed) {
+                                                            // 更新本地歌单数据
+                                                            val updatedPlaylist = playlist.copy(
+                                                                songs = playlist.songs.filterNot { 
+                                                                    (it.id.isNotBlank() && it.id == song.id) || 
+                                                                    (it.url.isNotBlank() && it.url == song.url)
+                                                                }
+                                                            )
+                                                            activePlaylist = updatedPlaylist
+                                                            // 刷新歌单列表
+                                                            syncedPlaylists.clear()
+                                                            syncedPlaylists.addAll(PlaylistDataStore.getAll(context))
+                                                            Toast.makeText(context, "已从歌单移除: ${song.name}", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                                ) {
+                                                    Text("从歌单移除", color = colorScheme.error)
+                                                }
+                                            }
+                                        )
+                                    }
+                                    
+                                    // 下载中指示器
                                     if (isDownloading) {
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(24.dp),
                                             strokeWidth = 2.dp,
                                             color = colorScheme.primary
                                         )
-                                    } else {
-                                        IconButton(
-                                            onClick = {
-                                                isDownloading = true
-                                                scope.launch {
-                                                    val customPath = if (DownloadSettingsStore.isUsingCustomPath(context)) DownloadSettingsStore.getCustomPath(context) else null
-                                                    DownloadManager.downloadSong(context, song, customPath)
-                                                        .onSuccess { message ->
-                                                            Toast.makeText(context, "下载完成: ${song.name}", Toast.LENGTH_LONG).show()
-                                                        }
-                                                        .onFailure { e ->
-                                                            Toast.makeText(context, "下载失败: ${e.message}", Toast.LENGTH_SHORT).show()
-                                                        }
-                                                    isDownloading = false
-                                                }
-                                            }
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Download,
-                                                contentDescription = "下载",
-                                                tint = colorScheme.primary.copy(alpha = 0.7f),
-                                                modifier = Modifier.size(24.dp)
-                                            )
-                                        }
                                     }
                                 }
                             }
@@ -546,56 +596,93 @@ fun MyMusicScreenV2(vm: MusicViewModel) {
                         // 歌曲列表
                         items(activeRecentPlaylist ?: emptyList()) { song ->
                             var isDownloading by remember { mutableStateOf(false) }
+                            var showSongMenu by remember { mutableStateOf(false) }
+                            
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { vm.playSong(song, activeRecentPlaylist ?: emptyList()) }
-                                    .padding(horizontal = 20.dp, vertical = 10.dp), 
+                                    .combinedClickable(
+                                        onClick = { vm.playSong(song, activeRecentPlaylist ?: emptyList()) },
+                                        onLongClick = { showSongMenu = true }
+                                    )
+                                    .padding(horizontal = 20.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 AsyncImage(
-                                    model = song.pic, 
-                                    contentDescription = null, 
+                                    model = song.pic,
+                                    contentDescription = null,
                                     modifier = Modifier
                                         .size(52.dp)
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(colorScheme.surfaceVariant), 
+                                        .background(colorScheme.surfaceVariant),
                                     contentScale = ContentScale.Crop
                                 )
                                 Column(Modifier.padding(start = 16.dp).weight(1f)) {
                                     Text(song.name, color = colorScheme.onBackground, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(song.artist, color = colorScheme.onSurfaceVariant, fontSize = 13.sp, maxLines = 1)
                                 }
+                                // 播放按钮
+                                IconButton(
+                                    onClick = { vm.playSong(song, activeRecentPlaylist ?: emptyList()) },
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.PlayArrow,
+                                        contentDescription = "播放",
+                                        tint = colorScheme.primary,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                                
+                                // 歌曲操作菜单弹窗
+                                if (showSongMenu) {
+                                    AlertDialog(
+                                        onDismissRequest = { showSongMenu = false },
+                                        title = { Text(song.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                        text = { Text("选择操作") },
+                                        confirmButton = {
+                                            TextButton(
+                                                onClick = {
+                                                    showSongMenu = false
+                                                    isDownloading = true
+                                                    scope.launch {
+                                                        val customPath = if (DownloadSettingsStore.isUsingCustomPath(context)) DownloadSettingsStore.getCustomPath(context) else null
+                                                        DownloadManager.downloadSong(context, song, customPath)
+                                                            .onSuccess {
+                                                                Toast.makeText(context, "下载完成: ${song.name}", Toast.LENGTH_LONG).show()
+                                                            }
+                                                            .onFailure { e ->
+                                                                Toast.makeText(context, "下载失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        isDownloading = false
+                                                    }
+                                                }
+                                            ) {
+                                                Text("下载")
+                                            }
+                                        },
+                                        dismissButton = {
+                                            TextButton(
+                                                onClick = {
+                                                    showSongMenu = false
+                                                    // 从最近播放移除
+                                                    vm.historyList.remove(song)
+                                                    Toast.makeText(context, "已从最近播放移除: ${song.name}", Toast.LENGTH_SHORT).show()
+                                                }
+                                            ) {
+                                                Text("从最近播放移除", color = colorScheme.error)
+                                            }
+                                        }
+                                    )
+                                }
+                                
+                                // 下载中指示器
                                 if (isDownloading) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(24.dp),
                                         strokeWidth = 2.dp,
                                         color = colorScheme.primary
                                     )
-                                } else {
-                                    IconButton(
-                                        onClick = {
-                                            isDownloading = true
-                                            scope.launch {
-                                                val customPath = if (DownloadSettingsStore.isUsingCustomPath(context)) DownloadSettingsStore.getCustomPath(context) else null
-                                                DownloadManager.downloadSong(context, song, customPath)
-                                                    .onSuccess { message ->
-                                                        Toast.makeText(context, "下载完成: ${song.name}", Toast.LENGTH_LONG).show()
-                                                    }
-                                                    .onFailure { e ->
-                                                        Toast.makeText(context, "下载失败: ${e.message}", Toast.LENGTH_SHORT).show()
-                                                    }
-                                                isDownloading = false
-                                            }
-                                        }
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Download,
-                                            contentDescription = "下载",
-                                            tint = colorScheme.primary.copy(alpha = 0.7f),
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                    }
                                 }
                             }
                         }

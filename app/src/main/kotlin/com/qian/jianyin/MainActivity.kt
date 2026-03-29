@@ -616,11 +616,42 @@ fun FullPlayerScreen(vm: MusicViewModel) {
             
             ModalBottomSheet(onDismissRequest = { showQueue = false }, containerColor = Color(0xFF151515)) {
                 Column(Modifier.fillMaxWidth().padding(16.dp).heightIn(max = 400.dp)) {
-                    Text("播放列表", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("播放列表", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "${vm.playQueue.size} 首",
+                            color = Color.White.copy(alpha = 0.6f),
+                            fontSize = 14.sp
+                        )
+                    }
                     LazyColumn(state = queueState) {
                         itemsIndexed(vm.playQueue) { _, s ->
-                            Text(s.name, color = if (s == currentSong) MaterialTheme.colorScheme.primary else Color.White,
-                                modifier = Modifier.fillMaxWidth().clickable { vm.playSong(s) }.padding(12.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    s.name,
+                                    color = if (s == currentSong) MaterialTheme.colorScheme.primary else Color.White,
+                                    modifier = Modifier.weight(1f).clickable { vm.playSong(s) }.padding(12.dp),
+                                    maxLines = 1
+                                )
+                                IconButton(
+                                    onClick = { vm.removeFromQueue(s) },
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "移除",
+                                        tint = Color.White.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
                         }
                     }
                     Spacer(Modifier.height(40.dp))

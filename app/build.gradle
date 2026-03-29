@@ -13,7 +13,22 @@ android {
         minSdk 24
         targetSdk 34
         versionCode 3
-        versionName '3.0'
+        versionName '3.0.1'
+    }
+
+    signingConfigs {
+        release {
+            storeFile file('F:\\download\\android.keystore')
+            storePassword "090819"
+            keyAlias "qiansign"
+            keyPassword "090819"
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
     }
 
     buildFeatures {

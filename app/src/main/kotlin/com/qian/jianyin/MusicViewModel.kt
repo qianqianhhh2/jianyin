@@ -618,6 +618,52 @@ fun togglePlay() {
     }
     
     /**
+     * 从播放队列移除指定歌曲
+     * @param song 要移除的歌曲
+     */
+    fun removeFromQueue(song: Song) {
+        val index = playQueue.indexOfFirst { isSameSong(it, song) }
+        if (index == -1) {
+            Log.d("MusicVM", "歌曲不在队列中: ${song.name}")
+            return
+        }
+        
+        // 如果移除的是当前播放的歌曲
+        if (index == currentQueueIndex.intValue) {
+            // 如果队列只剩一首歌，停止播放
+            if (playQueue.size == 1) {
+                playQueue.removeAt(index)
+                currentQueueIndex.intValue = -1
+                currentSong.value = null
+                player.pause()
+                isPlaying.value = false
+                mediaSessionManager.hideNotification()
+                audioManager.abandonAudioFocus(audioFocusChangeListener)
+                Log.d("MusicVM", "移除当前播放歌曲（最后一首），停止播放: ${song.name}")
+            } else {
+                // 播放下一首（移除前先记录下一首）
+                val nextIndex = if (index < playQueue.size - 1) index else 0
+                playQueue.removeAt(index)
+                // 调整索引
+                currentQueueIndex.intValue = if (index < playQueue.size) index else 0
+                // 播放新的当前索引歌曲
+                if (playQueue.isNotEmpty()) {
+                    startPlaying(playQueue[currentQueueIndex.intValue], playQueue)
+                }
+                Log.d("MusicVM", "移除当前播放歌曲，自动播放下一首: ${song.name}")
+            }
+        } else {
+            // 移除非当前播放歌曲
+            playQueue.removeAt(index)
+            // 如果移除的歌曲在当前播放歌曲之前，需要调整当前索引
+            if (index < currentQueueIndex.intValue) {
+                currentQueueIndex.intValue = currentQueueIndex.intValue - 1
+            }
+            Log.d("MusicVM", "从队列移除: ${song.name}, 新队列大小: ${playQueue.size}")
+        }
+    }
+
+    /**
      * 清空播放队列
      */
     fun clearQueue() {

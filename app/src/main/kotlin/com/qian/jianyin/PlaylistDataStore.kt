@@ -206,6 +206,33 @@ object PlaylistDataStore {
     }
 
     /**
+     * 从指定歌单中移除歌曲
+     * @param context 上下文
+     * @param playlistId 歌单ID
+     * @param song 要移除的歌曲
+     * @return 是否移除成功
+     */
+    fun removeSongFromPlaylist(context: Context, playlistId: String, song: Song): Boolean {
+        val playlist = getAll(context).find { it.id == playlistId } ?: return false
+        val currentSongs = playlist.songs.toMutableList()
+        
+        // 移除匹配的歌曲（通过ID或URL匹配）
+        val removed = currentSongs.removeAll { 
+            (it.id.isNotBlank() && it.id == song.id) || 
+            (it.url.isNotBlank() && it.url == song.url)
+        }
+        
+        if (removed) {
+            val updatedPlaylist = playlist.copy(
+                songs = currentSongs,
+                coverPic = if (currentSongs.isNotEmpty()) currentSongs[0].pic else ""
+            )
+            update(context, updatedPlaylist)
+        }
+        return removed
+    }
+
+    /**
      * 保存歌单列表到 SharedPreferences
      * @param context 上下文
      * @param list 歌单列表
