@@ -315,7 +315,8 @@ fun MiniPlayerBar(vm: MusicViewModel) {
             LinearProgressIndicator(
                 progress = { (vm.currentPosition.longValue.toFloat() / vm.totalDuration.longValue.coerceAtLeast(1L)).coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth().height(2.dp),
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = Color.Transparent
             )
             Row(Modifier.padding(8.dp).height(52.dp), verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(
