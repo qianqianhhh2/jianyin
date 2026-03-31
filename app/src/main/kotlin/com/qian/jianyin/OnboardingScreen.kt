@@ -241,10 +241,7 @@ fun WelcomePage() {
             painter = painterResource(id = R.drawable.icon),
             contentDescription = "简音",
             modifier = Modifier
-                .size(120.dp),
-            colorFilter = if (isDarkTheme) {
-                androidx.compose.ui.graphics.ColorFilter.tint(MaterialTheme.colorScheme.primary)
-            } else null
+                .size(120.dp)
         )
         
         Spacer(modifier = Modifier.height(48.dp))
@@ -253,7 +250,8 @@ fun WelcomePage() {
         Text(
             text = "欢迎",
             style = MaterialTheme.typography.headlineMedium.copy(
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
             )
         )
         
@@ -267,7 +265,9 @@ fun WelcomePage() {
         // 欢迎信息
         Text(
             text = "这是一个简单的音乐软件，使用网易云作为在线歌曲来源，目的是让音乐回归本质",
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onBackground
+            ),
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 16.dp)
         )
@@ -277,7 +277,9 @@ fun WelcomePage() {
         // 感谢信息
         Text(
             text = "软件内歌曲免费，感谢祈杰のMeting-API以及Meting-API开源项目",
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onBackground
+            ),
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 16.dp)
         )
@@ -287,7 +289,9 @@ fun WelcomePage() {
         // 引导信息
         Text(
             text = "接下来我们需要进行一些设置和认识，方便您使用此app",
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onBackground
+            ),
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 16.dp)
         )
@@ -341,7 +345,8 @@ fun PermissionsPage() {
         Text(
             text = "权限设置",
             style = MaterialTheme.typography.headlineMedium.copy(
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
             )
         )
         
@@ -350,7 +355,9 @@ fun PermissionsPage() {
         // 权限设置说明
         Text(
             text = "我们接下来进行权限设置，这可以帮助您更好的使用app",
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onBackground
+            ),
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 16.dp)
         )
@@ -397,13 +404,16 @@ fun PermissionsPage() {
                 Text(
                     text = "重要提示",
                     style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "为了确保音乐能够在后台正常播放，特别是在 vivo、OPPO、小米等手机上，请将简音添加到系统白名单中。",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 )
             }
         }
@@ -427,7 +437,8 @@ fun DownloadPage() {
         Text(
             text = "下载设置",
             style = MaterialTheme.typography.headlineMedium.copy(
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
             )
         )
         
@@ -436,7 +447,9 @@ fun DownloadPage() {
         // 下载目录说明
         Text(
             text = "您默认下载的歌曲文件在根目录的download文件夹下的jianyin文件夹内",
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onBackground
+            ),
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 16.dp)
         )
@@ -446,7 +459,9 @@ fun DownloadPage() {
         // 自定义设置说明
         Text(
             text = "如果您想，您可以在设置中找到下载目录设置进行设置，请确保目录存在",
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onBackground
+            ),
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 16.dp)
         )
@@ -469,19 +484,23 @@ fun DownloadPage() {
                     Icon(
                         imageVector = Icons.Filled.Info,
                         contentDescription = "提示",
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "默认路径",
                         style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     )
                 }
                 Text(
                     text = "/storage/emulated/0/Download/jianyin",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    ),
                     modifier = Modifier.padding(start = 28.dp)
                 )
             }
@@ -506,7 +525,8 @@ fun BackupPage() {
         Text(
             text = "备份",
             style = MaterialTheme.typography.headlineMedium.copy(
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
             )
         )
         
@@ -515,7 +535,9 @@ fun BackupPage() {
         // 备份说明
         Text(
             text = "如果您不想丢失您的数据，您可以对数据进行备份，此项可以设置中找到",
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onBackground
+            ),
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 16.dp)
         )
@@ -538,19 +560,23 @@ fun BackupPage() {
                     Icon(
                         imageVector = Icons.Filled.Backup,
                         contentDescription = "备份",
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "备份内容",
                         style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     )
                 }
                 Text(
                     text = "• 播放历史\n• 收藏歌曲\n• 播放列表\n• 下载设置",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
                     modifier = Modifier.padding(start = 28.dp)
                 )
             }
@@ -575,7 +601,8 @@ fun CompletePage() {
         Text(
             text = "完成",
             style = MaterialTheme.typography.headlineMedium.copy(
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
             )
         )
         
@@ -584,7 +611,9 @@ fun CompletePage() {
         // 完成说明
         Text(
             text = "设置完成，让我们开始吧",
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onBackground
+            ),
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 16.dp)
         )
@@ -639,13 +668,15 @@ fun PermissionItem(
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
                 )
             )
             Text(
                 text = description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    color = MaterialTheme.colorScheme.onBackground
+                )
             )
         }
     }
@@ -690,7 +721,9 @@ fun TypingText(text: String) {
     
     Text(
         text = displayText,
-        style = MaterialTheme.typography.headlineSmall,
+        style = MaterialTheme.typography.headlineSmall.copy(
+            color = MaterialTheme.colorScheme.onBackground
+        ),
         textAlign = TextAlign.Center
     )
 }
