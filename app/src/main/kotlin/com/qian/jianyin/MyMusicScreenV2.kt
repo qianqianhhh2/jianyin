@@ -61,6 +61,11 @@ fun MyMusicScreenV2(vm: MusicViewModel) {
     var showBackupDialog by remember { mutableStateOf(false) }
     var useCustomPath by remember { mutableStateOf(false) }
     var customPathInput by remember { mutableStateOf("") }
+    // 音质设置相关状态
+    var showDownloadQualityDialog by remember { mutableStateOf(false) }
+    var showPlayQualityDialog by remember { mutableStateOf(false) }
+    var selectedDownloadQuality by remember { mutableStateOf(192) }
+    var selectedPlayQuality by remember { mutableStateOf(192) }
     val appVersion = remember { "3.0.1" } // 应用版本
 
     val statsManager = remember { MusicStatsManager(context) }
@@ -245,20 +250,20 @@ fun MyMusicScreenV2(vm: MusicViewModel) {
                 confirmButton = {
                     Button(onClick = {
                         if (playlistIdInput.isBlank()) return@Button
-                        scope.launch {
-                            val songs = PlaylistSyncManager.fetchPlaylist(playlistIdInput)
-                            if (songs != null) {
-                                val newList = UserSyncedPlaylist(playlistIdInput, "新歌单_${playlistIdInput}", songs.firstOrNull()?.pic ?: "", songs)
-                                PlaylistDataStore.save(context, newList)
-                                syncedPlaylists.clear()
-                                syncedPlaylists.addAll(PlaylistDataStore.getAll(context))
-                                showAddDialog = false
-                                playlistIdInput = ""
-                                Toast.makeText(context, "同步成功", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "同步失败，请检查 ID", Toast.LENGTH_SHORT).show()
+                            scope.launch {
+                                val songs = PlaylistSyncManager.fetchPlaylist(playlistIdInput, context)
+                                if (songs != null) {
+                                    val newList = UserSyncedPlaylist(playlistIdInput, "新歌单_${playlistIdInput}", songs.firstOrNull()?.pic ?: "", songs)
+                                    PlaylistDataStore.save(context, newList)
+                                    syncedPlaylists.clear()
+                                    syncedPlaylists.addAll(PlaylistDataStore.getAll(context))
+                                    showAddDialog = false
+                                    playlistIdInput = ""
+                                    Toast.makeText(context, "同步成功", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "同步失败，请检查 ID", Toast.LENGTH_SHORT).show()
+                                }
                             }
-                        }
                     }) { Text("同步") }
                 },
                 dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("取消") } }
@@ -290,7 +295,7 @@ fun MyMusicScreenV2(vm: MusicViewModel) {
                                     // 收藏歌单不刷新歌曲列表
                                     Toast.makeText(context, "已更新！", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    val songs = PlaylistSyncManager.fetchPlaylist(target.id)
+                                    val songs = PlaylistSyncManager.fetchPlaylist(target.id, context)
                                     if (songs != null) {
                                         val updated = target.copy(songs = songs)
                                         PlaylistDataStore.update(context, updated)
@@ -711,6 +716,30 @@ fun MyMusicScreenV2(vm: MusicViewModel) {
                         
                         Divider(modifier = Modifier.padding(vertical = 8.dp))
                         
+                        // 下载音质设置
+                        ListItem(
+                            headlineContent = { Text("下载音质") },
+                            leadingContent = { Icon(Icons.Default.MusicNote, null) },
+                            supportingContent = { Text("${DownloadSettingsStore.getDownloadQuality(context)}kbps") },
+                            modifier = Modifier.clickable {
+                                selectedDownloadQuality = DownloadSettingsStore.getDownloadQuality(context)
+                                showDownloadQualityDialog = true
+                            }
+                        )
+                        
+                        // 播放音质设置
+                        ListItem(
+                            headlineContent = { Text("播放音质") },
+                            leadingContent = { Icon(Icons.Default.Headphones, null) },
+                            supportingContent = { Text("${DownloadSettingsStore.getPlayQuality(context)}kbps") },
+                            modifier = Modifier.clickable {
+                                selectedPlayQuality = DownloadSettingsStore.getPlayQuality(context)
+                                showPlayQualityDialog = true
+                            }
+                        )
+                        
+                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                        
                         // 备份与恢复
                         ListItem(
                             headlineContent = { Text("备份与恢复") },
@@ -828,6 +857,124 @@ fun MyMusicScreenV2(vm: MusicViewModel) {
                 },
                 dismissButton = {
                     TextButton(onClick = { showDownloadPathDialog = false }) {
+                        Text("取消")
+                    }
+                }
+            )
+        }
+        
+        // 下载音质选择对话框
+        if (showDownloadQualityDialog) {
+            val qualities = listOf(128, 192, 320, 2000)
+            AlertDialog(
+                onDismissRequest = { showDownloadQualityDialog = false },
+                title = { Text("选择下载音质") },
+                text = {
+                    Column {
+                        qualities.forEach { quality ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    selectedDownloadQuality = quality
+                                },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = selectedDownloadQuality == quality,
+                                    onClick = { selectedDownloadQuality = quality },
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = Color.Black
+                                    )
+                                )
+                                Text(
+                                    when (quality) {
+                                        128 -> "128kbps (标准)"
+                                        192 -> "192kbps (高清)"
+                                        320 -> "320kbps (超清)"
+                                        2000 -> "2000kbps (无损)"
+                                        else -> "$quality kbps"
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "提示：部分音质可能在部分歌曲上不生效",
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        DownloadSettingsStore.setDownloadQuality(context, selectedDownloadQuality)
+                        showDownloadQualityDialog = false
+                    }) {
+                        Text("保存")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDownloadQualityDialog = false }) {
+                        Text("取消")
+                    }
+                }
+            )
+        }
+        
+        // 播放音质选择对话框
+        if (showPlayQualityDialog) {
+            val qualities = listOf(128, 192, 320, 2000)
+            AlertDialog(
+                onDismissRequest = { showPlayQualityDialog = false },
+                title = { Text("选择播放音质") },
+                text = {
+                    Column {
+                        qualities.forEach { quality ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    selectedPlayQuality = quality
+                                },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = selectedPlayQuality == quality,
+                                    onClick = { selectedPlayQuality = quality },
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = Color.Black
+                                    )
+                                )
+                                Text(
+                                    when (quality) {
+                                        128 -> "128kbps (标准)"
+                                        192 -> "192kbps (高清)"
+                                        320 -> "320kbps (超清)"
+                                        2000 -> "2000kbps (无损)"
+                                        else -> "$quality kbps"
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "提示：部分音质可能在部分歌曲上不生效",
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        DownloadSettingsStore.setPlayQuality(context, selectedPlayQuality)
+                        showPlayQualityDialog = false
+                    }) {
+                        Text("保存")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showPlayQualityDialog = false }) {
                         Text("取消")
                     }
                 }

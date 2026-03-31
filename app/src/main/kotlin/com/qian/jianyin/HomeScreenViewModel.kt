@@ -44,7 +44,7 @@ class HomeScreenViewModel : ViewModel() {
     private fun fetchFirstCover(id: String) {
         viewModelScope.launch {
             try {
-                // 使用你现有的 PlaylistSyncManager
+                // 使用默认音质获取封面
                 val songs = PlaylistSyncManager.fetchPlaylist(id)
                 if (!songs.isNullOrEmpty()) {
                     coverMap[id] = songs[0].pic

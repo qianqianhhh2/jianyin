@@ -108,6 +108,11 @@ class MediaSessionManager private constructor(context: Context) {
      */
     private var latestPlaybackPosition: Long = 0L
 
+    /**
+     * 封面图片缓存，避免重复加载
+     */
+    private val artworkCache = mutableMapOf<String, Bitmap>()
+
     
     /**
      * 控制回调接口，用于将控制命令传递给 ViewModel
@@ -349,11 +354,20 @@ class MediaSessionManager private constructor(context: Context) {
         duration: Long = 0L,
         artworkUrl: String? = null
     ) {
-        val metadataBuilder = MediaMetadataCompat.Builder()
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
-            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
-            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album ?: "未知专辑")
-            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
+        // 如果已有元数据，保留封面信息
+        val metadataBuilder = if (currentMetadata != null) {
+            MediaMetadataCompat.Builder(currentMetadata!!)
+                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
+                .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album ?: "未知专辑")
+                .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
+        } else {
+            MediaMetadataCompat.Builder()
+                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
+                .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album ?: "未知专辑")
+                .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
+        }
         
         currentMetadata = metadataBuilder.build()
         mediaSession?.setMetadata(currentMetadata)
@@ -361,7 +375,14 @@ class MediaSessionManager private constructor(context: Context) {
         Log.d("MediaSession", "更新元数据: 标题=$title, 歌手=$artist, 时长=$duration")
         
         // 异步加载封面图片
-        artworkUrl?.let { loadArtworkAsync(it) }
+        if (artworkUrl != null) {
+            loadArtworkAsync(artworkUrl)
+        } else {
+            // 如果没有封面，直接显示通知
+            if (isPlaying) {
+                showNotification()
+            }
+        }
     }
     
     /**
@@ -373,6 +394,25 @@ class MediaSessionManager private constructor(context: Context) {
      * @param artworkUrl 封面图片URL或本地路径
      */
     private fun loadArtworkAsync(artworkUrl: String) {
+        // 先检查缓存
+        artworkCache[artworkUrl]?.let {
+            Log.d("MediaSession", "从缓存加载封面")
+            // 直接在主线程处理缓存的情况
+            currentMetadata?.let { metadata ->
+                val updatedMetadata = MediaMetadataCompat.Builder(metadata)
+                    .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it)
+                    .build()
+                
+                mediaSession?.setMetadata(updatedMetadata)
+                currentMetadata = updatedMetadata
+                
+                if (isPlaying) {
+                    showNotification(artworkBitmap = it)
+                }
+            }
+            return
+        }
+        
         Log.d("MediaSession", "开始加载封面: $artworkUrl")
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -387,7 +427,9 @@ class MediaSessionManager private constructor(context: Context) {
                 }
                 
                 if (bitmap != null) {
-                    Log.d("MediaSession", "封面加载成功，大小: ${bitmap.width}x${bitmap.height}")
+                    // 缓存图片
+                    artworkCache[artworkUrl] = bitmap
+                    Log.d("MediaSession", "封面加载成功，大小: ${bitmap.width}x${bitmap.height}，已缓存")
                     withContext(Dispatchers.Main) {
                         currentMetadata?.let { metadata ->
                             val updatedMetadata = MediaMetadataCompat.Builder(metadata)
@@ -397,7 +439,7 @@ class MediaSessionManager private constructor(context: Context) {
                             mediaSession?.setMetadata(updatedMetadata)
                             currentMetadata = updatedMetadata
                             
-                            // 更新通知中的大图标
+                            // 只在播放状态且通知需要更新时才显示
                             if (isPlaying) {
                                 Log.d("MediaSession", "更新通知封面")
                                 showNotification(artworkBitmap = bitmap)
@@ -406,10 +448,22 @@ class MediaSessionManager private constructor(context: Context) {
                     }
                 } else {
                     Log.d("MediaSession", "封面加载失败，bitmap为null")
+                    // 加载失败时也要确保通知显示（无封面）
+                    withContext(Dispatchers.Main) {
+                        if (isPlaying) {
+                            showNotification()
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("MediaSession", "加载封面异常", e)
                 e.printStackTrace()
+                // 异常时也要确保通知显示（无封面）
+                withContext(Dispatchers.Main) {
+                    if (isPlaying) {
+                        showNotification()
+                    }
+                }
             }
         }
     }
@@ -482,27 +536,27 @@ class MediaSessionManager private constructor(context: Context) {
         val mediaStyle = MediaNotificationCompat.MediaStyle()
             .setMediaSession(mediaSession?.sessionToken) // 关键：绑定到媒体会话
             .setShowActionsInCompactView(0, 1, 2) // 在折叠视图中显示的动作索引
-            .setShowCancelButton(true)
-            .setCancelButtonIntent(
-                buildMediaButtonPendingIntent(ACTION_STOP)
-            )
+            .setShowCancelButton(false) // 不显示取消按钮，避免与前台服务冲突
         
         // 获取当前元数据
         val title = currentMetadata?.getString(MediaMetadataCompat.METADATA_KEY_TITLE) ?: "简音"
         val artist = currentMetadata?.getString(MediaMetadataCompat.METADATA_KEY_ARTIST) ?: "未知歌手"
         val duration = currentMetadata?.getLong(MediaMetadataCompat.METADATA_KEY_DURATION) ?: 0L
         
+        // 优先使用传入的封面，其次从元数据中获取
+        val finalArtworkBitmap = artworkBitmap ?: currentMetadata?.getBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART)
+        
         // 构建通知
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play) // 使用系统图标或您的应用图标
             .setContentTitle(title)
             .setContentText(artist)
-            .setLargeIcon(artworkBitmap)
+            .setLargeIcon(finalArtworkBitmap)
             .setContentIntent(contentIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setStyle(mediaStyle) // 使用 MediaStyle
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true)
+            .setOngoing(true) // 保持通知常驻
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setDeleteIntent(
@@ -534,7 +588,7 @@ class MediaSessionManager private constructor(context: Context) {
         // 添加控制按钮
         addNotificationActions(notification)
         
-        // 显示通知
+        // 显示通知，使用相同的通知 ID 确保与前台服务通知更新而不是替换
         notificationManager.notify(NOTIFICATION_ID, notification.build())
         
         Log.d("MediaSession", "显示通知: $title - $artist")

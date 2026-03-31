@@ -27,6 +27,7 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.platform.LocalContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
@@ -37,6 +38,7 @@ fun HomeScreen(
     // 获取 MD3 动态配色方案
     val colorScheme = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     
     var activePlaylist by remember { mutableStateOf<HomePlaylist?>(null) }
     val playlistSongs = remember { mutableStateListOf<Song>() }
@@ -77,7 +79,7 @@ fun HomeScreen(
                         activePlaylist = item
                         scope.launch {
                             isDetailLoading = true
-                            val result = PlaylistSyncManager.fetchPlaylist(item.playlistId)
+                            val result = PlaylistSyncManager.fetchPlaylist(item.playlistId, context)
                             playlistSongs.clear()
                             if (result != null) playlistSongs.addAll(result)
                             isDetailLoading = false
@@ -133,7 +135,7 @@ fun HomeScreen(
                             activePlaylist = rank
                             scope.launch {
                                 isDetailLoading = true
-                                val result = PlaylistSyncManager.fetchPlaylist(rank.playlistId)
+                                val result = PlaylistSyncManager.fetchPlaylist(rank.playlistId, context)
                                 playlistSongs.clear()
                                 if (result != null) playlistSongs.addAll(result)
                                 isDetailLoading = false

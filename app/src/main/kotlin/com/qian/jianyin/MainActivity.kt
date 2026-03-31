@@ -70,16 +70,12 @@ data class NavItem(
 
 /**
  * 启动保活服务
- * 包括守护进程服务和 JobScheduler 任务
+ * 使用 WorkManager 调度保活任务
  * @param context 上下文
  */
 private fun startKeepAliveServices(context: Context) {
     try {
-        val daemonIntent = Intent(context, DaemonService::class.java)
-        context.startService(daemonIntent)
-        
-        KeepAliveJobService.scheduleJob(context)
-        
+        KeepAliveWorker.schedule(context)
         Log.d("MainActivity", "保活服务已启动")
     } catch (e: Exception) {
         Log.e("MainActivity", "启动保活服务失败", e)

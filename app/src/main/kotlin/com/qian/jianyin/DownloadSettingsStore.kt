@@ -11,6 +11,8 @@ object DownloadSettingsStore {
     private const val PREFS_NAME = "download_settings"
     private const val KEY_CUSTOM_PATH = "custom_download_path"
     private const val KEY_USE_CUSTOM_PATH = "use_custom_path"
+    private const val KEY_DOWNLOAD_QUALITY = "download_quality"
+    private const val KEY_PLAY_QUALITY = "play_quality"
     
     /**
      * 获取当前下载路径
@@ -71,5 +73,47 @@ object DownloadSettingsStore {
      */
     private fun getDefaultDownloadPath(): String {
         return "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)}/jianyin"
+    }
+    
+    /**
+     * 获取下载音质设置
+     * @param context 上下文
+     * @return 音质值，默认 192
+     */
+    fun getDownloadQuality(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_DOWNLOAD_QUALITY, 320)
+    }
+    
+    /**
+     * 设置下载音质
+     * @param context 上下文
+     * @param quality 音质值
+     */
+    fun setDownloadQuality(context: Context, quality: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_DOWNLOAD_QUALITY, quality)
+            .apply()
+    }
+    
+    /**
+     * 获取播放音质设置
+     * @param context 上下文
+     * @return 音质值，默认 192
+     */
+    fun getPlayQuality(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_PLAY_QUALITY, 320)
+    }
+    
+    /**
+     * 设置播放音质
+     * @param context 上下文
+     * @param quality 音质值
+     */
+    fun setPlayQuality(context: Context, quality: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_PLAY_QUALITY, quality)
+            .apply()
     }
 }

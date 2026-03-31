@@ -415,6 +415,19 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             val localSongPath = DownloadManager.getLocalSongPath(context, song)
             val localCoverPath = DownloadManager.getLocalCoverPath(context, song)
             
+            // 处理播放音质
+            val playQuality = DownloadSettingsStore.getPlayQuality(context)
+            val finalUrl = if (localSongPath == null && playQuality != 320) {
+                // 非本地文件且非默认音质，添加br参数
+                if (song.url.contains("?")) {
+                    "${song.url}&br=$playQuality"
+                } else {
+                    "${song.url}?br=$playQuality"
+                }
+            } else {
+                song.url
+            }
+            
             val mediaMetadata = MediaMetadata.Builder()
                 .setTitle(song.name)
                 .setArtist(song.artist)
@@ -422,7 +435,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 .build()
 
             val mediaItem = MediaItem.Builder()
-                .setUri(Uri.parse(localSongPath ?: song.url))
+                .setUri(Uri.parse(localSongPath ?: finalUrl))
                 .setMediaMetadata(mediaMetadata)
                 .build()
 

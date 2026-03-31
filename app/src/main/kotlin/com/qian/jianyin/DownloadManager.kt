@@ -66,7 +66,18 @@ object DownloadManager {
             song.url.let { url ->
                 val audioFile = File(songDir, "${sanitizeFileName(song.name)}.mp3")
                 if (!audioFile.exists()) {
-                    downloadFile(url, audioFile)
+                    // 根据下载音质设置添加br参数
+                    val downloadQuality = DownloadSettingsStore.getDownloadQuality(context)
+                    val finalUrl = if (downloadQuality != 320) {
+                        if (url.contains("?")) {
+                            "${url}&br=$downloadQuality"
+                        } else {
+                            "${url}?br=$downloadQuality"
+                        }
+                    } else {
+                        url
+                    }
+                    downloadFile(finalUrl, audioFile)
                     results.add("音频文件")
                 }
             }
