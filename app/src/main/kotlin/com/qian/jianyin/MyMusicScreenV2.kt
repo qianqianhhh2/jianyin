@@ -66,7 +66,7 @@ fun MyMusicScreenV2(vm: MusicViewModel) {
     var showPlayQualityDialog by remember { mutableStateOf(false) }
     var selectedDownloadQuality by remember { mutableStateOf(192) }
     var selectedPlayQuality by remember { mutableStateOf(192) }
-    val appVersion = remember { "3.0.1" } // 应用版本
+    val appVersion = remember { "3.1.1" } // 应用版本
 
     val statsManager = remember { MusicStatsManager(context) }
     val favoriteSongs = statsManager.getTopFavorites(vm.historyList)
