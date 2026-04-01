@@ -13,8 +13,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -28,6 +30,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 fun SearchScreen(vm: MusicViewModel) {
     var searchText by remember { mutableStateOf("") }
     val colorScheme = MaterialTheme.colorScheme
+    val focusManager = LocalFocusManager.current
 
     // 页面背景适配动态色
     Column(
@@ -64,7 +67,10 @@ fun SearchScreen(vm: MusicViewModel) {
                 imeAction = ImeAction.Search
             ),
             keyboardActions = KeyboardActions(
-                onSearch = { vm.executeSearch(searchText) }
+                onSearch = {
+                    vm.executeSearch(searchText)
+                    focusManager.clearFocus()
+                }
             )
         )
 
