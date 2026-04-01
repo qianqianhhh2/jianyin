@@ -4,6 +4,8 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -14,6 +16,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -56,6 +59,12 @@ fun SearchScreen(vm: MusicViewModel) {
                 unfocusedBorderColor = colorScheme.outline,
                 focusedTextColor = colorScheme.onSurface,
                 unfocusedTextColor = colorScheme.onSurface,
+            ),
+            keyboardOptions = KeyboardOptions(
+                imeAction = ImeAction.Search
+            ),
+            keyboardActions = KeyboardActions(
+                onSearch = { vm.executeSearch(searchText) }
             )
         )
 

@@ -108,7 +108,7 @@ class PlaybackService : MediaSessionService() {
         }
 
         startForegroundService()
-        return START_STICKY
+        return super.onStartCommand(intent, flags, startId)
     }
 
     /**

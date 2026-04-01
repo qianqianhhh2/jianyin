@@ -54,6 +54,9 @@ import android.content.Intent
 import android.content.Context
 import com.qian.jianyin.OnboardingManager
 import com.qian.jianyin.OnboardingScreen
+import androidx.media3.common.util.UnstableApi
+
+@UnstableApi
 
 /**
  * 导航项数据类
@@ -73,6 +76,7 @@ data class NavItem(
  * 使用 WorkManager 调度保活任务
  * @param context 上下文
  */
+@OptIn(androidx.media3.common.util.UnstableApi::class)
 private fun startKeepAliveServices(context: Context) {
     try {
         KeepAliveWorker.schedule(context)

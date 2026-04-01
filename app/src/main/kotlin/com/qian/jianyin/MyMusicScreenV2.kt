@@ -272,7 +272,7 @@ fun MyMusicScreenV2(vm: MusicViewModel) {
 
         // --- 弹窗逻辑 2：长按菜单 ---
         if (selectedPlaylistForMenu != null) {
-        val isFavoritesPlaylist = selectedPlaylistForMenu?.id == "jianyin_favorites_playlist"
+            val isFavoritesPlaylist = selectedPlaylistForMenu?.id == "jianyin_favorites_playlist"
             ModalBottomSheet(
                 onDismissRequest = { selectedPlaylistForMenu = null },
                 containerColor = colorScheme.surfaceContainerHigh

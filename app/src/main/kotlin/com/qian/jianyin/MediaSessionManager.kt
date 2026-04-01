@@ -329,10 +329,8 @@ class MediaSessionManager private constructor(context: Context) {
         
         Log.d("MediaSession", "更新播放状态: 正在播放=$isPlaying, 位置=$position")
         
-        // 如果正在播放，显示通知
-        if (isPlaying) {
-            showNotification()
-        }
+        // 无论播放还是暂停，都显示通知，只是更新通知上的播放/暂停按钮状态
+        showNotification()
     }
     
     /**
@@ -663,6 +661,16 @@ class MediaSessionManager private constructor(context: Context) {
             else -> KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
         }
         
+        // 为每个动作使用不同的 requestCode，确保 PendingIntent 唯一
+        val requestCode = when (action) {
+            ACTION_PLAY -> 1
+            ACTION_PAUSE -> 2
+            ACTION_NEXT -> 3
+            ACTION_PREVIOUS -> 4
+            ACTION_STOP -> 5
+            else -> 0
+        }
+        
         // 使用 AndroidX 的 MediaButtonReceiver 构建 PendingIntent
         val intent = Intent(Intent.ACTION_MEDIA_BUTTON)
         intent.setClass(context, androidx.media.session.MediaButtonReceiver::class.java)
@@ -670,7 +678,7 @@ class MediaSessionManager private constructor(context: Context) {
         
         return PendingIntent.getBroadcast(
             context,
-            0,
+            requestCode,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )

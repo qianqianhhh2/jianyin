@@ -13,6 +13,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
+import androidx.media3.common.util.UnstableApi
+
+@UnstableApi
 
 /**
  * 保活 Worker
