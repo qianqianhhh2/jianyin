@@ -92,6 +92,8 @@ dependencies {
     // Haze library for blur effects
     implementation("dev.chrisbanes.haze:haze:1.7.2")
     implementation("dev.chrisbanes.haze:haze-materials:1.7.2")
+    // 权限处理
+    implementation "com.google.accompanist:accompanist-permissions:0.35.1-alpha"
     //歌曲数据处理
     implementation "com.github.goxr3plus:jaudiotagger:2.2.7"
 }

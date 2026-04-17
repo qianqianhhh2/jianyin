@@ -92,6 +92,8 @@ import java.io.File
 import com.qian.jianyin.OnboardingManager
 import com.qian.jianyin.OnboardingScreen
 import com.qian.jianyin.HitokotoManager
+import com.qian.jianyin.PermissionManager
+import com.qian.jianyin.PermissionCheck
 import androidx.media3.common.util.UnstableApi
 import dev.chrisbanes.haze.ExperimentalHazeApi
 import dev.chrisbanes.haze.HazeState
@@ -659,6 +661,9 @@ fun MainScreenFramework(vm: MusicViewModel = viewModel()) {
             DownloadStateManager.resetState()
         }
     )
+    
+    // 权限检查
+    PermissionCheck()
 }
 
 /**

@@ -93,6 +93,7 @@ class PlaybackService : MediaSessionService() {
      * 并返回 START_STICKY 确保服务被系统杀死后能重新启动。
      */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
         intent?.let {
             if (Intent.ACTION_MEDIA_BUTTON == it.action) {
                 val mediaSessionManager = MediaSessionManager.getInstance(applicationContext)
