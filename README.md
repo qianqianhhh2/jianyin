@@ -7,7 +7,7 @@
 **一个基于 Meting API 的现代化音乐播放器**
 
 [![Android API](https://img.shields.io/badge/API-21%2B-brightgreen.svg?style=flat-square)](https://android-arsenal.com/api?level=21)
-[![Kotlin](https://img.shields.io/badge/Kotlin-1.9.0-blue.svg?style=flat-square)](https://kotlinlang.org)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.3.0-blue.svg?style=flat-square)](https://kotlinlang.org)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/qianqianhhh2/jianyin?style=flat-square)](https://github.com/qianqianhhh2/jianyin/stargazers)
 [![GitHub Forks](https://img.shields.io/github/forks/qianqianhhh2/jianyin?style=flat-square)](https://github.com/qianqianhhh2/jianyin/network/members)
