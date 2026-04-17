@@ -2,7 +2,9 @@ package com.qian.jianyin
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.unit.*
 import androidx.compose.foundation.lazy.*
+
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -27,89 +29,124 @@ import androidx.compose.foundation.isSystemInDarkTheme
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
-fun SearchScreen(vm: MusicViewModel) {
+fun SearchScreen(
+    vm: MusicViewModel,
+    innerPadding: PaddingValues
+) {
     var searchText by remember { mutableStateOf("") }
     val colorScheme = MaterialTheme.colorScheme
     val focusManager = LocalFocusManager.current
 
     // 页面背景适配动态色
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(colorScheme.background)
     ) {
-        // 1. 搜索框：适配 M3 OutlinedTextField 风格
-        OutlinedTextField(
-            value = searchText,
-            onValueChange = { searchText = it },
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            placeholder = { Text("搜索音乐/歌手", color = colorScheme.onSurfaceVariant) },
-            shape = RoundedCornerShape(28.dp),
-            leadingIcon = { Icon(Icons.Default.Search, null, tint = colorScheme.onSurfaceVariant) },
-            trailingIcon = {
-                if (searchText.isNotEmpty()) {
-                    IconButton(onClick = { vm.executeSearch(searchText) }) {
-                        Icon(Icons.Default.Send, null, tint = colorScheme.primary)
-                    }
-                }
-            },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = if (isSystemInDarkTheme()) Color(0xFF2D3748) else Color(0xFFE3EAF6),
-                unfocusedContainerColor = if (isSystemInDarkTheme()) Color(0xFF2D3748).copy(alpha = 0.8f) else Color(0xFFE3EAF6).copy(alpha = 0.8f),
-                focusedBorderColor = colorScheme.primary,
-                unfocusedBorderColor = colorScheme.outline,
-                focusedTextColor = colorScheme.onSurface,
-                unfocusedTextColor = colorScheme.onSurface,
-            ),
-            keyboardOptions = KeyboardOptions(
-                imeAction = ImeAction.Search
-            ),
-            keyboardActions = KeyboardActions(
-                onSearch = {
-                    vm.executeSearch(searchText)
-                    focusManager.clearFocus()
-                }
-            )
-        )
-
-        // 2. 内容区域逻辑判断
-        if (searchText.isEmpty() && vm.searchResults.isEmpty()) {
-            // 搜索历史与推荐
-            LazyColumn(
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars)
+        ) {
+            // 1. 搜索框：适配 M3 OutlinedTextField 风格
+            OutlinedTextField(
+                value = searchText,
+                onValueChange = { searchText = it },
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp)
-            ) {
-                // 搜索历史部分
-                if (vm.searchHistory.isNotEmpty()) {
-                    item {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "搜索历史",
-                                color = colorScheme.onBackground,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            TextButton(onClick = { 
-                                // 根据 ViewModel 逻辑清空历史
-                                vm.searchHistory.clear() 
-                            }) {
-                                Text("清空", color = colorScheme.primary, fontSize = 12.sp)
+                    .fillMaxWidth()
+                    .padding(16.dp, 8.dp), // 减小底部padding，缩小与搜索历史的间隙
+                placeholder = { Text("搜索音乐/歌手", color = colorScheme.onSurfaceVariant) },
+                shape = RoundedCornerShape(28.dp),
+                leadingIcon = { Icon(Icons.Default.Search, null, tint = colorScheme.onSurfaceVariant) },
+                trailingIcon = {
+                    if (searchText.isNotEmpty()) {
+                        IconButton(onClick = { vm.executeSearch(searchText) }) {
+                            Icon(Icons.Default.Send, null, tint = colorScheme.primary)
+                        }
+                    }
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = if (isSystemInDarkTheme()) Color(0xFF2D3748) else Color(0xFFE3EAF6),
+                    unfocusedContainerColor = if (isSystemInDarkTheme()) Color(0xFF2D3748).copy(alpha = 0.8f) else Color(0xFFE3EAF6).copy(alpha = 0.8f),
+                    focusedBorderColor = colorScheme.primary,
+                    unfocusedBorderColor = colorScheme.outline,
+                    focusedTextColor = colorScheme.onSurface,
+                    unfocusedTextColor = colorScheme.onSurface,
+                ),
+                keyboardOptions = KeyboardOptions(
+                    imeAction = ImeAction.Search
+                ),
+                keyboardActions = KeyboardActions(
+                    onSearch = {
+                        vm.executeSearch(searchText)
+                        focusManager.clearFocus()
+                    }
+                )
+            )
+
+            // 2. 内容区域逻辑判断
+            if (searchText.isEmpty() && vm.searchResults.isEmpty()) {
+                // 搜索历史与推荐
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    contentPadding = innerPadding
+                ) {
+                    // 搜索历史部分
+                    if (vm.searchHistory.isNotEmpty()) {
+                        item {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "搜索历史",
+                                    color = colorScheme.onBackground,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                TextButton(onClick = { 
+                                    // 根据 ViewModel 逻辑清空历史
+                                    vm.searchHistory.clear() 
+                                    // 保存清空后的状态到SharedPreferences
+                                    vm.saveSearchHistory()
+                                }) {
+                                    Text("清空", color = colorScheme.primary, fontSize = 12.sp)
+                                }
+                            }
+                            
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                vm.searchHistory.forEach { history ->
+                                    SuggestionTagV2(history, colorScheme) {
+                                        searchText = it
+                                        vm.executeSearch(it)
+                                    }
+                                }
                             }
                         }
-                        
+                    }
+
+                    // 推荐搜索部分
+                    item {
+                        Spacer(Modifier.height(24.dp))
+                        Text(
+                            "推荐搜索",
+                            color = colorScheme.onBackground,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
                         FlowRow(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            vm.searchHistory.forEach { history ->
-                                SuggestionTagV2(history, colorScheme) {
+                            vm.recommendedSearches.forEach { tag ->
+                                SuggestionTagV2(tag, colorScheme) {
                                     searchText = it
                                     vm.executeSearch(it)
                                 }
@@ -117,45 +154,23 @@ fun SearchScreen(vm: MusicViewModel) {
                         }
                     }
                 }
-
-                // 推荐搜索部分
-                item {
-                    Spacer(Modifier.height(24.dp))
-                    Text(
-                        "推荐搜索",
-                        color = colorScheme.onBackground,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            } else {
+                // 3. 搜索结果展示
+                if (vm.isSearching.value) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = colorScheme.primary)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = innerPadding
                     ) {
-                        vm.recommendedSearches.forEach { tag ->
-                            SuggestionTagV2(tag, colorScheme) {
-                                searchText = it
-                                vm.executeSearch(it)
+                        items(vm.searchResults) { song ->
+                            SongItemViewV2(song, colorScheme) {
+                                vm.playSong(song, vm.searchResults)
                             }
                         }
                     }
-                }
-            }
-        } else {
-            // 3. 搜索结果展示
-            if (vm.isSearching.value) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = colorScheme.primary)
-                }
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(vm.searchResults) { song ->
-                        SongItemViewV2(song, colorScheme) {
-                            vm.playSong(song, vm.searchResults)
-                        }
-                    }
-                    // 关键：适配底部导航栏和手势指示条
-                    item { Spacer(Modifier.navigationBarsPadding().height(86.dp)) }
                 }
             }
         }

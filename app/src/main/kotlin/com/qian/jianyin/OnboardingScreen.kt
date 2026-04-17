@@ -38,6 +38,8 @@ import android.provider.Settings
 import android.content.pm.PackageManager
 import androidx.compose.ui.platform.LocalContext
 import kotlin.math.max
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 
 /**
  * 引导页管理器
@@ -139,37 +141,37 @@ fun OnboardingScreen(onComplete: () -> Unit) {
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 100.dp),
-            horizontalArrangement = Arrangement.Center
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            repeat(totalPages) { page ->
-                AnimatedVisibility(
-                    visible = page == currentPage,
-                    enter = scaleIn(animationSpec = tween(300, easing = EaseOutQuad)) +
-                            fadeIn(animationSpec = tween(300, easing = EaseOutQuad)),
-                    exit = scaleOut(animationSpec = tween(300, easing = EaseInQuad)) +
-                            fadeOut(animationSpec = tween(300, easing = EaseInQuad))
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(16.dp)
-                            .padding(horizontal = 4.dp)
-                            .background(
-                                MaterialTheme.colorScheme.primary,
-                                RoundedCornerShape(8.dp)
-                            )
-                    )
-                }
-                if (page != currentPage) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .padding(horizontal = 4.dp)
-                            .background(
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                RoundedCornerShape(4.dp)
-                            )
-                    )
-                }
+            repeat(totalPages) {
+                val isCurrentPage = it == currentPage
+                val indicatorSize by animateDpAsState(
+                    targetValue = if (isCurrentPage) 16.dp else 8.dp,
+                    animationSpec = tween(300, easing = EaseOutQuad)
+                )
+                val indicatorColor by animateColorAsState(
+                    targetValue = if (isCurrentPage) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                    },
+                    animationSpec = tween(300, easing = EaseOutQuad)
+                )
+                val indicatorRadius by animateDpAsState(
+                    targetValue = if (isCurrentPage) 8.dp else 4.dp,
+                    animationSpec = tween(300, easing = EaseOutQuad)
+                )
+                
+                Box(
+                    modifier = Modifier
+                        .size(indicatorSize)
+                        .padding(horizontal = 4.dp)
+                        .background(
+                            indicatorColor,
+                            RoundedCornerShape(indicatorRadius)
+                        )
+                )
             }
         }
         
@@ -307,30 +309,53 @@ fun WelcomePage() {
 fun PermissionsPage() {
     val context = LocalContext.current
     
+    // 存储权限请求
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            Toast.makeText(context, "存储权限已授予", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "存储权限被拒绝", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    // 通知权限请求
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            Toast.makeText(context, "通知权限已授予", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "通知权限被拒绝", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
     fun requestStoragePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Android 11+ 请求管理所有文件权限
             val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
             intent.data = Uri.fromParts("package", context.packageName, null)
             context.startActivity(intent)
-        } else {
-            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-            intent.data = Uri.fromParts("package", context.packageName, null)
-            context.startActivity(intent)
+            Toast.makeText(context, "请授予简音管理所有文件的权限", Toast.LENGTH_SHORT).show()
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            // Android 6.0+ 请求运行时权限
+            storagePermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
     }
     
     fun requestNotificationPermission() {
-        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-        } else {
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                .setData(Uri.fromParts("package", context.packageName, null))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ 请求通知权限
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            // Android 6.0+ 请求运行时权限
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        context.startActivity(intent)
     }
     
     fun requestBackgroundPermission() {
+        // 后台权限需要跳转到设置页面
         val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
         context.startActivity(intent)
     }
@@ -622,16 +647,8 @@ fun CompletePage() {
     }
 }
 
-/**
- * 权限项组件
- * 
- * 显示单个权限的图标、标题和描述，并提供点击事件处理。
- * 
- * @param icon 权限图标
- * @param title 权限标题
- * @param description 权限描述
- * @param onClick 点击事件回调
- */
+
+
 @Composable
 fun PermissionItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -682,13 +699,6 @@ fun PermissionItem(
     }
 }
 
-/**
- * 打字效果文本组件
- * 
- * 实现文本的打字动画效果，包括文本的逐字显示和删除效果。
- * 
- * @param text 要显示的文本
- */
 @Composable
 fun TypingText(text: String) {
     var displayText by remember { mutableStateOf("") }

@@ -352,25 +352,17 @@ class MediaSessionManager private constructor(context: Context) {
         duration: Long = 0L,
         artworkUrl: String? = null
     ) {
-        // 如果已有元数据，保留封面信息
-        val metadataBuilder = if (currentMetadata != null) {
-            MediaMetadataCompat.Builder(currentMetadata!!)
-                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
-                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
-                .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album ?: "未知专辑")
-                .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
-        } else {
-            MediaMetadataCompat.Builder()
-                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
-                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
-                .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album ?: "未知专辑")
-                .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
-        }
+        // 总是创建新的元数据构建器，避免保留旧的封面信息
+        val metadataBuilder = MediaMetadataCompat.Builder()
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
+            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album ?: "未知专辑")
+            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
         
         currentMetadata = metadataBuilder.build()
         mediaSession?.setMetadata(currentMetadata)
         
-        Log.d("MediaSession", "更新元数据: 标题=$title, 歌手=$artist, 时长=$duration")
+        Log.d("MediaSession", "更新元数据: 标题=$title, 歌手=$artist, 时长=$duration, 封面=$artworkUrl")
         
         // 异步加载封面图片
         if (artworkUrl != null) {
@@ -470,6 +462,7 @@ class MediaSessionManager private constructor(context: Context) {
      * 从网络下载位图
      * 
      * 通过 HTTP 连接下载网络图片并转换为 Bitmap。
+     * 如果是 GIF 文件，只取第一帧。
      * 
      * @param url 图片URL
      * @return 下载的 Bitmap，失败则返回 null
@@ -480,7 +473,12 @@ class MediaSessionManager private constructor(context: Context) {
             connection.doInput = true
             connection.connect()
             val input: InputStream = connection.inputStream
-            BitmapFactory.decodeStream(input)
+            
+            if (url.lowercase().endsWith(".gif")) {
+                decodeGifFirstFrame(input)
+            } else {
+                BitmapFactory.decodeStream(input)
+            }
         } catch (e: Exception) {
             null
         }
@@ -490,6 +488,7 @@ class MediaSessionManager private constructor(context: Context) {
      * 从本地文件加载位图
      * 
      * 从本地文件系统加载图片并转换为 Bitmap。
+     * 如果是 GIF 文件，只取第一帧。
      * 
      * @param filePath 本地文件路径
      * @return 加载的 Bitmap，失败则返回 null
@@ -500,13 +499,42 @@ class MediaSessionManager private constructor(context: Context) {
             val file = File(filePath)
             if (file.exists()) {
                 Log.d("MediaSession", "本地封面文件存在: ${file.absolutePath}")
-                BitmapFactory.decodeFile(filePath)
+                val input = file.inputStream()
+                
+                if (filePath.lowercase().endsWith(".gif")) {
+                    decodeGifFirstFrame(input)
+                } else {
+                    BitmapFactory.decodeFile(filePath)
+                }
             } else {
                 Log.d("MediaSession", "本地封面文件不存在: ${file.absolutePath}")
                 null
             }
         } catch (e: Exception) {
             Log.e("MediaSession", "加载本地封面失败", e)
+            null
+        }
+    }
+    
+    /**
+     * 解码 GIF 文件的第一帧
+     * 
+     * @param inputStream GIF 文件输入流
+     * @return 第一帧的 Bitmap，失败则返回 null
+     */
+    private fun decodeGifFirstFrame(inputStream: InputStream): Bitmap? {
+        return try {
+            val movie = android.graphics.Movie.decodeStream(inputStream)
+            if (movie != null) {
+                val bitmap = Bitmap.createBitmap(movie.width(), movie.height(), Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(bitmap)
+                movie.draw(canvas, 0f, 0f)
+                bitmap
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("MediaSession", "解码GIF第一帧失败", e)
             null
         }
     }
@@ -587,7 +615,10 @@ class MediaSessionManager private constructor(context: Context) {
         addNotificationActions(notification)
         
         // 显示通知，使用相同的通知 ID 确保与前台服务通知更新而不是替换
-        notificationManager.notify(NOTIFICATION_ID, notification.build())
+        val notificationObj = notification.build()
+        notificationManager.notify(NOTIFICATION_ID, notificationObj)
+        
+        // 服务已经在 onCreate 中启动了前台模式，这里只需要更新通知
         
         Log.d("MediaSession", "显示通知: $title - $artist")
     }

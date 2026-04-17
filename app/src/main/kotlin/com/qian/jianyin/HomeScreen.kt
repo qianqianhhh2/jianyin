@@ -23,33 +23,52 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.CreationExtras
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import com.qian.jianyin.R
+import dev.chrisbanes.haze.ExperimentalHazeApi
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class, ExperimentalHazeApi::class)
 @Composable
 fun HomeScreen(
     vm: MusicViewModel,
-    homeVm: HomeScreenViewModel = viewModel()
+    innerPadding: androidx.compose.foundation.layout.PaddingValues
 ) {
-    // 获取 MD3 动态配色方案
+    val context = LocalContext.current
+    val homeVm: HomeScreenViewModel = viewModel(factory = object : ViewModelProvider.Factory {
+        override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
+            return HomeScreenViewModel(context) as T
+        }
+    })
+
     val colorScheme = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     
     var activePlaylist by remember { mutableStateOf<HomePlaylist?>(null) }
     val playlistSongs = remember { mutableStateListOf<Song>() }
     var isDetailLoading by remember { mutableStateOf(false) }
+    
+    // 创建歌单详情页的 HazeState
+    val detailHazeState = remember { HazeState() }
 
     Box(modifier = Modifier
         .fillMaxSize()
         .background(colorScheme.background)
     ) {
         
-        // 主页内容：参照 MyMusicScreenV2 的状态栏预留方式
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -57,15 +76,17 @@ fun HomeScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
         ) {
+
+            Spacer(modifier = Modifier.height(64.dp))
             Text(
                 text = "简音", 
                 fontSize = 32.sp, 
                 fontWeight = FontWeight.Black, 
                 color = colorScheme.onBackground, 
-                modifier = Modifier.padding(top = 12.dp, bottom = 28.dp) // 仅保留少量间距增加呼吸感
+                modifier = Modifier.padding(bottom = 28.dp) 
             )
 
-            // 1. 推荐歌单
+            // 推荐歌单
             Text("精选推荐", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = colorScheme.onBackground)
             Spacer(Modifier.height(16.dp))
             AnimatedVisibility(
@@ -75,7 +96,8 @@ fun HomeScreen(
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 items(homeVm.recommendedPlaylists) { item ->
                     val coverUrl = homeVm.coverMap[item.playlistId]
-                    Column(modifier = Modifier.width(150.dp).clickable {
+                    val itemHazeState = remember { HazeState() }
+                    Box(modifier = Modifier.width(150.dp).clickable {
                         activePlaylist = item
                         scope.launch {
                             isDetailLoading = true
@@ -91,24 +113,35 @@ fun HomeScreen(
                             modifier = Modifier
                                 .size(150.dp)
                                 .clip(RoundedCornerShape(18.dp))
-                                .background(if (isSystemInDarkTheme()) Color(0xFF2D3748) else Color(0xFFE3EAF6)), 
+                                .background(if (isSystemInDarkTheme()) Color(0xFF2D3748) else Color(0xFFE3EAF6))
+                                .hazeSource(itemHazeState), 
                             contentScale = ContentScale.Crop
                         )
-                        Text(
-                            item.name, 
-                            color = colorScheme.onBackground, 
-                            fontSize = 14.sp, 
-                            modifier = Modifier.padding(top = 8.dp), 
-                            maxLines = 1, 
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            item.subTitle, 
-                            color = colorScheme.onSurfaceVariant, 
-                            fontSize = 12.sp, 
-                            maxLines = 1, 
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(150.dp, 45.dp)
+                                .clip(RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp))
+                                .hazeEffect(itemHazeState, HazeStyle(blurRadius = 10.dp, tint = HazeTint(Color.Black.copy(alpha = 0.2f))))
+                                .align(Alignment.BottomStart)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(10.dp)
+                                    .padding(bottom = 6.dp),
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    item.name, 
+                                    color = Color.White, 
+                                    fontSize = 11.sp, 
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1, 
+                                    overflow = TextOverflow.Ellipsis,
+                                    softWrap = false
+                                )
+                            }
+                        }
                     }
                 }
                 }
@@ -116,7 +149,7 @@ fun HomeScreen(
 
             Spacer(Modifier.height(36.dp))
 
-            // 2. 排行榜
+            // 排行榜
             Text("排行榜", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = colorScheme.onBackground)
             Spacer(Modifier.height(16.dp))
             AnimatedVisibility(
@@ -129,8 +162,6 @@ fun HomeScreen(
                     Box(modifier = Modifier
                         .width(280.dp)
                         .height(110.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(if (isSystemInDarkTheme()) Color(0xFF2D3748) else Color(0xFFE3EAF6))
                         .clickable {
                             activePlaylist = rank
                             scope.launch {
@@ -142,28 +173,79 @@ fun HomeScreen(
                             }
                         }
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize()) {
-                            AsyncImage(
-                                model = rankCover, 
-                                contentDescription = null, 
-                                modifier = Modifier
-                                    .padding(12.dp)
-                                    .size(86.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(colorScheme.surface), 
-                                contentScale = ContentScale.Crop
-                            )
-                            Column(modifier = Modifier.padding(end = 12.dp).weight(1f)) {
-                                Text(rank.name, color = colorScheme.onBackground, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    rank.subTitle, 
-                                    color = colorScheme.onSurfaceVariant, 
-                                    fontSize = 11.sp, 
-                                    maxLines = 2, 
-                                    overflow = TextOverflow.Ellipsis, 
-                                    lineHeight = 14.sp
+                        
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .offset(x = 8.dp, y = 8.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(
+                                    if (isSystemInDarkTheme()) 
+                                        Color(0xFF171923)
+                                    else 
+                                        Color(0xFFCBD5E0)
                                 )
+                        )
+                        
+                    
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .offset(x = 4.dp, y = 4.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(
+                                    if (isSystemInDarkTheme()) 
+                                        Color(0xFF1A202C)
+                                    else 
+                                        Color(0xFFE2E8F0)
+                                )
+                        )
+                        
+                       
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(
+                                    if (isSystemInDarkTheme()) 
+                                        Color(0xFF2D3748)
+                                    else 
+                                        Color(0xFFF7FAFC)
+                                )
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize()) {
+                                AsyncImage(
+                                    model = rankCover, 
+                                    contentDescription = null, 
+                                    modifier = Modifier
+                                        .padding(12.dp)
+                                        .size(86.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(
+                                            if (isSystemInDarkTheme()) 
+                                                Color(0xFF4A5568)
+                                            else 
+                                                Color(0xFFFFFEFE)
+                                        ), 
+                                    contentScale = ContentScale.Crop
+                                )
+                                Column(modifier = Modifier.padding(end = 12.dp).weight(1f)) {
+                                    Text(
+                                        rank.name, 
+                                        color = colorScheme.onBackground, 
+                                        fontSize = 17.sp, 
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        rank.subTitle, 
+                                        color = colorScheme.onSurfaceVariant, 
+                                        fontSize = 11.sp, 
+                                        maxLines = 2, 
+                                        overflow = TextOverflow.Ellipsis, 
+                                        lineHeight = 14.sp
+                                    )
+                                }
                             }
                         }
                     }
@@ -174,13 +256,10 @@ fun HomeScreen(
         }
 
         // 详情页
-        // 详情页
 AnimatedContent(
     targetState = activePlaylist,
     transitionSpec = {
-        // 进入动画：从中心缩放并淡入
         scaleIn(initialScale = 0.1f) + fadeIn() with
-        // 退出动画：缩放到中心并淡出
         scaleOut(targetScale = 0.1f) + fadeOut()
     }
 ) {
@@ -188,11 +267,25 @@ AnimatedContent(
         Column(
             modifier = Modifier.fillMaxSize().background(colorScheme.background)
         ) {
-            // 顶部应用栏
+            // 处理返回键
+            BackHandler {
+                if (vm.isPlayerSheetVisible.value) {
+                    vm.isPlayerSheetVisible.value = false
+                } else {
+                    activePlaylist = null
+                }
+            }
+            
             CenterAlignedTopAppBar(
                 title = { Text(playlist.name, fontSize = 18.sp, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = { activePlaylist = null }) {
+                    IconButton(onClick = {
+                        if (vm.isPlayerSheetVisible.value) {
+                            vm.isPlayerSheetVisible.value = false
+                        } else {
+                            activePlaylist = null
+                        }
+                    }) {
                         Icon(Icons.Default.ArrowBack, null)
                     }
                 },
@@ -203,16 +296,13 @@ AnimatedContent(
                 )
             )
 
-            // 加载状态或内容
             if (isDetailLoading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { 
                     CircularProgressIndicator(color = colorScheme.primary) 
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    // 顶部区域：封面图、间隙、描述文字和播放按钮
                     if (playlistSongs.isNotEmpty()) {
-                        // 封面图
                         item {
                             Box(Modifier.fillMaxWidth().padding(vertical = 30.dp), contentAlignment = Alignment.Center) {
                                 AsyncImage(
@@ -227,16 +317,13 @@ AnimatedContent(
                             }
                         }
                         
-                        // 封面图与描述文字之间的间隙
                         item {
                             Spacer(modifier = Modifier.height(20.dp))
                         }
                         
-                        // 描述文字与播放按钮
                         item {
                             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    // 描述文字
                                     Text(
                                         text = playlist.subTitle,
                                         color = colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
@@ -245,9 +332,9 @@ AnimatedContent(
                                         modifier = Modifier
                                             .padding(horizontal = 40.dp)
                                     )
-                                    // 描述文字与播放按钮之间的间隙
+ 
                                     Spacer(modifier = Modifier.height(16.dp))
-                                    // 播放全部按钮
+
                                     FilledTonalButton(
                                         onClick = { vm.playSong(playlistSongs[0], playlistSongs) },
                                         modifier = Modifier.padding(bottom = 20.dp),
@@ -266,37 +353,48 @@ AnimatedContent(
                     }
                     
                     // 歌曲列表
-                    items(playlistSongs) { song ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { vm.playSong(song, playlistSongs) }
-                                .padding(horizontal = 20.dp, vertical = 10.dp), 
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            AsyncImage(
-                                model = song.pic, 
-                                contentDescription = null, 
+                    itemsIndexed(playlistSongs) { index, song ->
+                        Column {
+                            Row(
                                 modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(colorScheme.surfaceVariant), 
-                                contentScale = ContentScale.Crop
-                            )
-                            Column(Modifier.padding(start = 16.dp).weight(1f)) {
-                                Text(song.name, color = colorScheme.onBackground, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(song.artist, color = colorScheme.onSurfaceVariant, fontSize = 13.sp, maxLines = 1)
+                                    .fillMaxWidth()
+                                    .clickable { vm.playSong(song, playlistSongs) }
+                                    .padding(horizontal = 20.dp, vertical = 10.dp), 
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AsyncImage(
+                                    model = song.pic, 
+                                    contentDescription = null, 
+                                    modifier = Modifier
+                                        .size(52.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(colorScheme.surfaceVariant), 
+                                    contentScale = ContentScale.Crop
+                                )
+                                Column(Modifier.padding(start = 16.dp).weight(1f)) {
+                                    Text(song.name, color = colorScheme.onBackground, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(song.artist, color = colorScheme.onSurfaceVariant, fontSize = 13.sp, maxLines = 1)
+                                }
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_play), 
+                                    contentDescription = "播放", 
+                                    tint = colorScheme.primary, 
+                                    modifier = Modifier.size(28.dp)
+                                )
                             }
-                            Icon(
-                                Icons.Default.PlayArrow, 
-                                null, 
-                                tint = colorScheme.primary.copy(alpha = 0.5f), 
-                                modifier = Modifier.size(20.dp)
-                            )
+
+                            if (index < playlistSongs.size - 1) {
+                                Divider(
+                                    modifier = Modifier
+                                        .padding(horizontal = 20.dp)
+                                        .fillMaxWidth(),
+                                    color = Color.Gray.copy(alpha = 0.3f)
+                                )
+                            }
                         }
                     }
-                    // 列表底部留白
-                    item { Spacer(Modifier.height(100.dp)) }
+
+                    item { Spacer(Modifier.navigationBarsPadding().height(160.dp)) }
                 }
             }
         } // 结束 Column
@@ -304,6 +402,5 @@ AnimatedContent(
 } // 结束 AnimatedVisibility
 
 
-    BackHandler(enabled = activePlaylist != null) { activePlaylist = null }
 }
 }

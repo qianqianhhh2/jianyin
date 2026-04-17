@@ -22,6 +22,13 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.converter.scalars.ScalarsConverterFactory
 
+// 进度条样式枚举
+enum class ProgressBarStyle {
+    DEFAULT,          // 默认样式
+    ROUND,            // 圆条样式
+    AUDIO             // 音频波形图样式
+}
+
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     // 音频管理器
@@ -29,7 +36,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         getApplication<Application>().getSystemService(Context.AUDIO_SERVICE) as AudioManager
     }
     
-    // ✅ 关键修复：添加媒体会话管理器
     private val mediaSessionManager = MediaSessionManager.getInstance(application)
     
     // --- 状态订阅 ---
@@ -37,7 +43,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val historyList = mutableStateListOf<Song>()    
     val searchHistory = mutableStateListOf<String>() 
     
-    // ✅ 修复1: 清晰的播放队列管理
     val playQueue = mutableStateListOf<Song>()      // 播放队列
     var currentQueueIndex = mutableIntStateOf(-1)   // 当前播放索引
 
@@ -54,16 +59,23 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- 播放模式 ---
     val playMode = mutableStateOf(PlaybackMode.SEQUENCE)
+    
+    // --- 进度条样式 ---
+    val progressBarStyle = mutableStateOf(ProgressBarStyle.DEFAULT)
 
-    // ✅ 新增：用于UI自动滚动追踪的状态
     val currentPlayingList = mutableStateListOf<Song>()   // 当前播放歌曲的来源列表
     val currentPlayingListIndex = mutableIntStateOf(-1)    // 当前歌曲在来源列表中的索引
+    
+    // 歌单更新触发器，用于通知 UI 刷新歌单列表
+    val playlistUpdateTrigger = mutableIntStateOf(0)
 
         // 收藏状态
     val isCurrentSongFavorited = mutableStateOf(false)
 
     // 推荐搜索词
     val recommendedSearches = listOf("周杰伦", "陈奕迅", "林俊杰", "五月天", "邓紫棋", "告白气球", "十周年", "平凡之路")
+
+
 
     val player = ExoPlayer.Builder(application).build()
     private val prefs = application.getSharedPreferences("music_prefs", Context.MODE_PRIVATE)
@@ -107,7 +119,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     init {
         loadDataFromPrefs()
         
-        // ✅ 关键修复：初始化媒体会话管理器
+        // 加载保存的进度条样式
+        loadProgressBarStyle()
+        
         initializeMediaSession()
         
         player.addListener(object : Player.Listener {
@@ -117,12 +131,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     totalDuration.longValue = player.duration
                     startProgressUpdater()
                     
-                    // ✅ 更新媒体会话播放状态
                     mediaSessionManager.updatePlaybackState(true, player.currentPosition)
                 } else {
                     progressJob?.cancel()
                     
-                    // ✅ 更新媒体会话播放状态
                     mediaSessionManager.updatePlaybackState(false, player.currentPosition)
                 }
             }
@@ -156,7 +168,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     if (duration > 0 && currentSong.value != null) {
                         totalDuration.longValue = duration
                         
-                        // ✅ 关键修复：更新媒体会话的元数据，包含正确的时长
                         currentSong.value?.let { song ->
                             mediaSessionManager.updateMetadata(
                                 title = song.name,
@@ -178,16 +189,19 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * 初始化媒体会话
      */
     private fun initializeMediaSession() {
-        // ✅ 设置媒体会话控制回调
         mediaSessionManager.controlCallback = object : MediaSessionManager.MediaControlCallback {
             override fun onPlay() {
                 Log.d("MusicVM", "从通知栏收到播放命令")
-                togglePlay()
+                if (!player.isPlaying) {
+                    togglePlay()
+                }
             }
             
             override fun onPause() {
                 Log.d("MusicVM", "从通知栏收到暂停命令")
-                togglePlay()
+                if (player.isPlaying) {
+                    togglePlay()
+                }
             }
             
             override fun onNext() {
@@ -214,7 +228,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         
-        // ✅ 初始化媒体会话管理器
         mediaSessionManager.initialize()
     }
 
@@ -222,6 +235,28 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun togglePlayMode() {
         playMode.value = playMode.value.next()
         Log.d("MusicVM", "播放模式切换为: ${playMode.value}")
+    }
+    
+    // 切换进度条样式
+    fun setProgressBarStyle(style: ProgressBarStyle) {
+        progressBarStyle.value = style
+        saveProgressBarStyle(style)
+        Log.d("MusicVM", "进度条样式切换为: ${style}")
+    }
+
+    // 保存进度条样式到SharedPreferences
+    private fun saveProgressBarStyle(style: ProgressBarStyle) {
+        val sharedPreferences = getApplication<Application>().getSharedPreferences("music_player_prefs", Context.MODE_PRIVATE)
+        sharedPreferences.edit().putString("progress_bar_style", style.name).apply()
+    }
+
+    // 从SharedPreferences加载进度条样式
+    private fun loadProgressBarStyle() {
+        val sharedPreferences = getApplication<Application>().getSharedPreferences("music_player_prefs", Context.MODE_PRIVATE)
+        val savedStyle = sharedPreferences.getString("progress_bar_style", ProgressBarStyle.DEFAULT.name)
+        val style = ProgressBarStyle.valueOf(savedStyle ?: ProgressBarStyle.DEFAULT.name)
+        progressBarStyle.value = style
+        Log.d("MusicVM", "加载进度条样式: ${style}")
     }
     
         /**
@@ -274,11 +309,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     
-    // --- 核心播放逻辑（已修复）---
     
-    /**
-     * 可靠的歌曲匹配函数（新增）
-     */
     private fun isSameSong(a: Song, b: Song): Boolean {
         // 优先比较ID（最可靠的标识）
         if (a.id.isNotBlank() && b.id.isNotBlank() && a.id == b.id) {
@@ -291,31 +322,21 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         return false
     }
     
-    /**
-     * 播放歌曲（完整修复版）
-     * 修复问题：点击歌单或搜索结果中的任意歌曲，将正确播放该歌曲，而不是第一首。
-     * 新增功能：记录歌曲来源列表，支持UI自动滚动。
-     */
     fun playSong(song: Song, newQueue: List<Song>? = null) {
         Log.d("MusicVM", "playSong 被调用: ${song.name}, 来源队列大小=${newQueue?.size ?: "无"}")
         
-        // ✅ 修复1: 清晰的队列管理逻辑
         if (newQueue != null && newQueue.isNotEmpty()) {
-            // 🅰️ 场景A: 播放整个歌单/列表（如从搜索、歌单详情页点击）
             playQueue.clear()
             playQueue.addAll(newQueue)
             
-            // 使用可靠的匹配函数查找被点击歌曲在列表中的准确位置
             val index = newQueue.indexOfFirst { isSameSong(it, song) }
             currentQueueIndex.intValue = if (index != -1) index else 0
             
             val songToPlay = playQueue[currentQueueIndex.intValue]
             Log.d("MusicVM", "列表播放模式。队列大小=${playQueue.size}, 目标索引=$index, 即将播放: ${songToPlay.name}")
             
-            // ✅ 关键修改：传递完整的源列表 newQueue
             startPlaying(songToPlay, newQueue)
         } else {
-            // 🅱️ 场景B: 播放单曲 或 歌曲已在现有队列中
             val isSongInQueue = playQueue.any { isSameSong(it, song) }
             
             if (playQueue.isEmpty() || !isSongInQueue) {
@@ -325,17 +346,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 currentQueueIndex.intValue = 0
                 Log.d("MusicVM", "单曲播放模式。创建新队列，播放: ${song.name}")
                 
-                // ✅ 关键修改：传递仅包含这首歌的列表
                 startPlaying(song, listOf(song))
             } else {
-                // 歌曲已在队列中 -> 准确定位并播放
+                // 歌曲已在队列中 -> 定位并播放
                 val index = playQueue.indexOfFirst { isSameSong(it, song) }
                 if (index != -1) {
                     currentQueueIndex.intValue = index
                     val songToPlay = playQueue[currentQueueIndex.intValue]
                     Log.d("MusicVM", "从现有队列中定位。索引=$index, 播放: ${songToPlay.name}")
                     
-                    // ✅ 关键修改：传递当前的播放队列 playQueue
                     startPlaying(songToPlay, playQueue)
                 } else {
                     // 安全回退
@@ -343,23 +362,18 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     playQueue.add(song)
                     currentQueueIndex.intValue = playQueue.size - 1
                     
-                    // ✅ 关键修改：传递更新后的播放队列
                     startPlaying(song, playQueue)
                 }
             }
         }
-        // 打印当前队列状态（调试用）
+        // 打印当前队列状态（debug）
         printQueueStatus()
     }
     
-    /**
-     * 开始播放歌曲（内部方法，已增强）
-     * 新增功能：记录歌曲来源列表，为UI自动滚动提供数据。
-     */
     private fun startPlaying(song: Song, sourceList: List<Song>? = null) {
         Log.d("MusicVM", "startPlaying: ${song.name}, sourceList大小=${sourceList?.size ?: "无"}")
         
-        // 1. 请求音频焦点
+        // 请求音频焦点
         if (audioManager.requestAudioFocus(
                 audioFocusChangeListener,
                 AudioManager.STREAM_MUSIC,
@@ -370,31 +384,28 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         
-        // 2. 更新当前歌曲和索引状态
+        // 更新当前歌曲和索引状态
         currentSong.value = song
         currentLrc.clear()
         currentLineIndex.intValue = 0
         currentPosition.longValue = 0L
         totalDuration.longValue = 0L
         
-        // 3. ==== 新增逻辑：记录来源列表和索引，用于UI自动滚动 ====
+        // 记录来源列表和索引
         if (sourceList != null) {
-            // 更新全局的"当前播放列表"引用
             currentPlayingList.clear()
             currentPlayingList.addAll(sourceList)
-            // 查找并记录歌曲在源列表中的准确位置
             val indexInSource = sourceList.indexOfFirst { isSameSong(it, song) }
             currentPlayingListIndex.intValue = if (indexInSource != -1) indexInSource else 0
             Log.d("MusicVM", "已记录来源列表，大小=${currentPlayingList.size}, 歌曲索引=${currentPlayingListIndex.intValue}")
         } else {
-            // 如果没有提供源列表，则默认使用 playQueue
             val indexInQueue = playQueue.indexOfFirst { isSameSong(it, song) }
             currentPlayingListIndex.intValue = if (indexInQueue != -1) indexInQueue else 0
             currentPlayingList.clear()
             currentPlayingList.addAll(playQueue)
         }
         
-        // 4. 历史记录处理
+        // 历史记录处理
         if (historyList.contains(song)) {
             historyList.remove(song)
         }
@@ -404,20 +415,28 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
         saveHistory()
         
-        // 5. 记录播放次数，用于最近最爱排序
+        // 记录播放次数
         val statsManager = MusicStatsManager(getApplication())
         statsManager.recordPlay(song.id.ifBlank { song.url })
 
-        // 5. 配置并准备播放器
+        //配置并准备播放器
         try {
-            // 优先使用本地文件
             val context = getApplication<Application>()
-            val localSongPath = DownloadManager.getLocalSongPath(context, song)
-            val localCoverPath = DownloadManager.getLocalCoverPath(context, song)
+            var localSongPath: String? = null
+            var localCoverPath: String? = null
+            
+            if (song.isLocal) {
+                // 本地歌曲，直接使用歌曲的url作为路径
+                localSongPath = song.url
+            } else {
+                // 网络歌曲，尝试获取本地下载路径
+                localSongPath = DownloadManager.getLocalSongPath(context, song)
+                localCoverPath = DownloadManager.getLocalCoverPath(context, song)
+            }
             
             // 处理播放音质
             val playQuality = DownloadSettingsStore.getPlayQuality(context)
-            val finalUrl = if (localSongPath == null && playQuality != 320) {
+            val finalUrl = if (!song.isLocal && localSongPath == null && playQuality != 320) {
                 // 非本地文件且非默认音质，添加br参数
                 if (song.url.contains("?")) {
                     "${song.url}&br=$playQuality"
@@ -445,12 +464,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             
             isPlaying.value = true
             
-            // 6. 更新媒体会话
+            //更新媒体会话
             mediaSessionManager.updateMetadata(
                 title = song.name,
                 artist = song.artist,
                 album = "专辑",
-                duration = 0L, // 初始为0，播放器准备好后会自动更新
+                duration = 0L, // 初始为0，播放器准备好后自动更新
                 artworkUrl = localCoverPath ?: song.pic
             )
             mediaSessionManager.updatePlaybackState(true, 0L)
@@ -463,36 +482,102 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             isPlaying.value = false
         }
 
-        // 7. 异步加载歌词（优先使用本地已下载的歌词）
+        // 异步加载歌词
         viewModelScope.launch {
             try {
-                val localLrcPath = DownloadManager.getLocalLrcPath(getApplication(), song)
-                val lrcContent = if (localLrcPath != null) {
-                    // 使用本地已下载的歌词
-                    File(localLrcPath).readText()
-                } else if (!song.lrc.isNullOrEmpty()) {
-                    // 从网络获取歌词
-                    if (song.lrc.startsWith("http")) api.getLrcByUrl(song.lrc)
-                    else api.getLrcById(id = song.id)
-                } else ""
+                var lrcContent = ""
+                
+                if (song.isLocal) {
+                    // 本地歌曲，优先使用自定义歌词
+                    val customLyrics = SongCustomDataStore.getLyrics(getApplication(), song.url)
+                    if (customLyrics.isNotEmpty()) {
+                        lrcContent = customLyrics
+                    } else {
+                        val lyricSource = DownloadSettingsStore.getLyricSource(getApplication())
+                        if (lyricSource == 0) {
+                            // 内嵌歌词
+                            val localMusicManager = LocalMusicManager(getApplication())
+                            val lyrics = localMusicManager.extractLyrics(song.url)
+                            if (!lyrics.isNullOrEmpty()) {
+                                lrcContent = lyrics
+                            }
+                        } else {
+                            // 网络歌词
+                            lrcContent = fetchNetworkLyrics(song.name, song.artist)
+                        }
+                    }
+                } else {
+                    // 网络歌曲，优先使用自定义歌词
+                    val customLyrics = SongCustomDataStore.getLyrics(getApplication(), song.url)
+                    if (customLyrics.isNotEmpty()) {
+                        lrcContent = customLyrics
+                    } else {
+                        // 尝试获取本地下载的歌词或从网络获取
+                        val localLrcPath = DownloadManager.getLocalLrcPath(getApplication(), song)
+                        lrcContent = if (localLrcPath != null) {
+                            // 使用本地已下载的歌词
+                            File(localLrcPath).readText()
+                        } else if (!song.lrc.isNullOrEmpty()) {
+                            // 从网络获取歌词
+                            if (song.lrc.startsWith("http")) api.getLrcByUrl(song.lrc)
+                            else api.getLrcById(id = song.id)
+                        } else ""
+                    }
+                }
+                
                 currentLrc.clear()
-                currentLrc.addAll(parseLrc(lrcContent))
+                if (lrcContent.isNotEmpty()) {
+                    currentLrc.addAll(parseLrc(lrcContent))
+                } else {
+                    currentLrc.add(LrcLine(0, "暂无歌词"))
+                }
             } catch (e: Exception) {
                 currentLrc.clear()
                 currentLrc.add(LrcLine(0, "暂无歌词"))
             }
         }
+        
+        // 应用自定义封面
+        viewModelScope.launch {
+            val customCover = SongCustomDataStore.getCover(getApplication(), song.url)
+            if (customCover.isNotEmpty()) {
+                val updatedSong = song.copy(pic = customCover)
+                currentSong.value = updatedSong
+                // 更新播放队列中的歌曲（使用 isSameSong 作为匹配逻辑）
+                val index = playQueue.indexOfFirst { isSameSong(it, song) }
+                if (index != -1) {
+                    playQueue[index] = updatedSong
+                }
+                // 更新当前播放列表中的歌曲
+                val playingIndex = currentPlayingList.indexOfFirst { isSameSong(it, song) }
+                if (playingIndex != -1) {
+                    currentPlayingList[playingIndex] = updatedSong
+                }
+                // 更新历史记录中的歌曲
+                val historyIndex = historyList.indexOfFirst { isSameSong(it, song) }
+                if (historyIndex != -1) {
+                    historyList[historyIndex] = updatedSong
+                }
+                // 更新媒体会话的封面
+                mediaSessionManager.updateMetadata(
+                    title = updatedSong.name,
+                    artist = updatedSong.artist,
+                    album = "未知专辑",
+                    duration = totalDuration.longValue,
+                    artworkUrl = customCover
+                )
+            }
+        }
+        
         checkIfCurrentSongIsFavorited()
     }
     
-    // ✅ 修复3: 改进的下一首/上一首逻辑
     fun nextSong() {
         if (playQueue.isEmpty()) {
             Log.d("MusicVM", "队列为空，无法下一首")
             return
         }
         
-        // ✅ 关键修复：验证当前索引的有效性
         if (currentQueueIndex.intValue < 0 || currentQueueIndex.intValue >= playQueue.size) {
             Log.w("MusicVM", "当前索引无效，重置为0")
             currentQueueIndex.intValue = 0
@@ -500,7 +585,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         
         val nextSong = when (playMode.value) {
             PlaybackMode.SINGLE -> {
-                // 单曲循环：播放同一首
                 Log.d("MusicVM", "单曲循环模式，继续播放: ${playQueue[currentQueueIndex.intValue].name}")
                 playQueue[currentQueueIndex.intValue]
             }
@@ -512,7 +596,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     var randomIndex: Int
                     do {
                         randomIndex = (0 until playQueue.size).random()
-                    } while (randomIndex == currentQueueIndex.intValue) // 避免和当前歌曲相同
+                    } while (randomIndex == currentQueueIndex.intValue)
                     
                     currentQueueIndex.intValue = randomIndex
                     Log.d("MusicVM", "随机播放模式，随机到: ${playQueue[randomIndex].name}")
@@ -528,9 +612,55 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         
-        // ✅ 修复：下一首时也传递当前播放队列作为来源列表
         startPlaying(nextSong, playQueue)
         Log.d("MusicVM", "下一首: ${nextSong.name}, 索引: $currentQueueIndex")
+    }
+
+    // 设置歌词内容
+    fun setLyrics(lrcContent: String) {
+        viewModelScope.launch {
+            currentLrc.clear()
+            if (lrcContent.isNotEmpty()) {
+                currentLrc.addAll(parseLrc(lrcContent))
+            } else {
+                currentLrc.add(LrcLine(0, "暂无歌词"))
+            }
+        }
+    }
+
+    // 设置封面
+    fun setCover(coverUri: String) {
+        viewModelScope.launch {
+            currentSong.value?.let {song ->
+                val updatedSong = song.copy(pic = coverUri)
+                currentSong.value = updatedSong
+                // 更新播放队列中的歌曲（使用 url 作为唯一标识）
+                val index = playQueue.indexOfFirst { it.url == song.url }
+                if (index != -1) {
+                    playQueue[index] = updatedSong
+                }
+                // 更新当前播放列表中的歌曲
+                val playingIndex = currentPlayingList.indexOfFirst { it.url == song.url }
+                if (playingIndex != -1) {
+                    currentPlayingList[playingIndex] = updatedSong
+                }
+                // 更新历史记录中的歌曲
+                val historyIndex = historyList.indexOfFirst { it.url == song.url }
+                if (historyIndex != -1) {
+                    historyList[historyIndex] = updatedSong
+                }
+                // 更新媒体会话的封面
+                mediaSessionManager.updateMetadata(
+                    title = updatedSong.name,
+                    artist = updatedSong.artist,
+                    album = "未知专辑",
+                    duration = totalDuration.longValue,
+                    artworkUrl = coverUri
+                )
+                // 触发歌单更新，通知 UI 刷新
+                playlistUpdateTrigger.intValue++
+            }
+        }
     }
 
     fun previousSong() {
@@ -539,7 +669,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         
-        // ✅ 关键修复：验证当前索引的有效性
         if (currentQueueIndex.intValue < 0 || currentQueueIndex.intValue >= playQueue.size) {
             Log.w("MusicVM", "当前索引无效，重置为最后一项")
             currentQueueIndex.intValue = playQueue.size - 1
@@ -579,7 +708,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         
-        // ✅ 修复：上一首时也传递当前播放队列作为来源列表
         startPlaying(prevSong, playQueue)
         Log.d("MusicVM", "上一首: ${prevSong.name}, 索引: $currentQueueIndex")
     }
@@ -591,8 +719,7 @@ fun togglePlay() {
         isPlaying.value = false
         // 释放音频焦点
         audioManager.abandonAudioFocus(audioFocusChangeListener)
-        // ✅ 更新媒体会话播放状态 (暂停时)
-        mediaSessionManager.updatePlaybackState(false, player.currentPosition) // 关键：传递当前播放位置
+        mediaSessionManager.updatePlaybackState(false, player.currentPosition) 
     } else {
         // 重新请求音频焦点
         if (audioManager.requestAudioFocus(
@@ -603,7 +730,6 @@ fun togglePlay() {
         ) {
             player.play()
             isPlaying.value = true
-            // ✅ 更新媒体会话播放状态 (播放时)
             mediaSessionManager.updatePlaybackState(true, player.currentPosition)
         }
     }
@@ -614,7 +740,6 @@ fun togglePlay() {
         val newPosition = if (pos < 0) 0L else if (pos > totalDuration.longValue) totalDuration.longValue else pos
         player.seekTo(newPosition)
         currentPosition.longValue = newPosition
-        // ✅ 更新媒体会话播放状态
         mediaSessionManager.updatePlaybackState(player.isPlaying, newPosition)
     }
     
@@ -719,7 +844,6 @@ fun togglePlay() {
                 val currentPos = player.currentPosition
                 currentPosition.longValue = currentPos
                 
-                // ✅ 更新媒体会话播放位置
                 mediaSessionManager.updatePlaybackState(true, currentPos)
                 
                 val idx = currentLrc.indexOfLast { it.time <= player.currentPosition }
@@ -733,7 +857,7 @@ fun togglePlay() {
         prefs.edit().putString("play_history", gson.toJson(historyList.toList())).apply()
     }
 
-    private fun saveSearchHistory() {
+    fun saveSearchHistory() {
         prefs.edit().putString("search_history", gson.toJson(searchHistory.toList())).apply()
     }
 
@@ -751,7 +875,7 @@ fun togglePlay() {
     }
     
     /**
-     * 打印队列状态（调试用）
+     * 打印队列状态（debug）
      */
     private fun printQueueStatus() {
         Log.d("MusicVM", "=== 播放队列状态 ===")
@@ -769,9 +893,51 @@ fun togglePlay() {
     override fun onCleared() {
         super.onCleared()
         audioManager.abandonAudioFocus(audioFocusChangeListener)
-        // ✅ 释放媒体会话资源
         mediaSessionManager.release()
         player.release()
+    }
+    
+    /**
+     * 从网络获取歌词
+     * @param songName 歌曲名字
+     * @param artistName 歌手名字
+     * @return 歌词内容，如果获取失败则返回空字符串
+     */
+    private suspend fun fetchNetworkLyrics(songName: String, artistName: String): String {
+        try {
+            // 搜索歌曲
+            val searchResults = api.searchSongs(keyword = songName)
+            if (searchResults.isEmpty()) {
+                return ""
+            }
+            
+            // 尝试匹配歌手名字
+            var targetSong: Song? = null
+            if (artistName.isNotEmpty() && artistName != "未知歌手") {
+                targetSong = searchResults.find { 
+                    it.artist.contains(artistName) || artistName.contains(it.artist)
+                }
+            }
+            
+            // 如果没有找到匹配的歌手，使用第一个结果
+            if (targetSong == null) {
+                targetSong = searchResults.first()
+            }
+            
+            // 获取歌词
+            return if (!targetSong.lrc.isNullOrEmpty()) {
+                if (targetSong.lrc.startsWith("http")) {
+                    api.getLrcByUrl(targetSong.lrc)
+                } else {
+                    api.getLrcById(id = targetSong.id)
+                }
+            } else {
+                ""
+            }
+        } catch (e: Exception) {
+            Log.e("MusicVM", "获取网络歌词失败", e)
+            return ""
+        }
     }
     
     companion object {

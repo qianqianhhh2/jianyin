@@ -46,12 +46,14 @@ object DownloadManager {
      * @param context 上下文
      * @param song 歌曲对象
      * @param customPath 自定义下载路径，默认为 null
+     * @param progressCallback 进度回调
      * @return 下载结果
      */
     suspend fun downloadSong(
         context: Context,
         song: Song,
-        customPath: String? = null
+        customPath: String? = null,
+        progressCallback: ((Float) -> Unit)? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val downloadDir = getDownloadDirectory(context, customPath)
@@ -77,7 +79,7 @@ object DownloadManager {
                     } else {
                         url
                     }
-                    downloadFile(finalUrl, audioFile)
+                    downloadFile(finalUrl, audioFile, progressCallback)
                     results.add("音频文件")
                 }
             }
@@ -111,6 +113,47 @@ object DownloadManager {
             results.add("元数据")
             
             Result.success("下载完成: ${results.joinToString(", ")}\n保存位置: ${songDir.absolutePath}")
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * 批量下载歌曲
+     * @param context 上下文
+     * @param songs 歌曲列表
+     * @param customPath 自定义下载路径，默认为 null
+     * @param progressCallback 进度回调
+     * @return 下载结果
+     */
+    suspend fun downloadSongs(
+        context: Context,
+        songs: List<Song>,
+        customPath: String? = null,
+        progressCallback: ((Int, Int, String, Float) -> Unit)? = null
+    ): Result<List<String>> = withContext(Dispatchers.IO) {
+        try {
+            val results = mutableListOf<String>()
+            
+            for ((index, song) in songs.withIndex()) {
+                progressCallback?.invoke(index, songs.size, song.name, 0f)
+                
+                val songResult = downloadSong(
+                    context,
+                    song,
+                    customPath
+                ) { progress ->
+                    progressCallback?.invoke(index, songs.size, song.name, progress)
+                }
+                
+                if (songResult.isSuccess) {
+                    results.add(songResult.getOrThrow())
+                } else {
+                    results.add("下载失败: ${song.name} - ${songResult.exceptionOrNull()?.message}")
+                }
+            }
+            
+            Result.success(results)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -166,14 +209,26 @@ object DownloadManager {
      * @param url 文件URL
      * @param outputFile 目标文件
      */
-    private suspend fun downloadFile(url: String, outputFile: File) {
+    private suspend fun downloadFile(url: String, outputFile: File, progressCallback: ((Float) -> Unit)? = null) {
         val request = Request.Builder().url(url).build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw Exception("下载失败: ${response.code}")
             
+            val totalSize = response.body?.contentLength() ?: 0
+            var downloadedSize = 0L
+            
             response.body?.byteStream()?.use { input ->
                 FileOutputStream(outputFile).use { output ->
-                    input.copyTo(output)
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                        downloadedSize += bytesRead
+                        if (totalSize > 0) {
+                            val progress = downloadedSize.toFloat() / totalSize
+                            progressCallback?.invoke(progress)
+                        }
+                    }
                 }
             }
         }

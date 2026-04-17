@@ -19,11 +19,7 @@ import androidx.media3.common.util.UnstableApi
  *
  * 继承自 MediaSessionService，提供媒体播放功能，
  * 处理媒体按钮事件和前台服务通知。
- *
- * 使用 ExoPlayer 作为媒体播放器，
- * 与 MediaSessionManager 配合处理媒体控制。
- *
- * 支持绑定机制保活，当客户端绑定时服务优先级提升。
+ *去tm的魔改系统
  */
 @UnstableApi
 class PlaybackService : MediaSessionService() {
@@ -56,7 +52,11 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
 
         createNotificationChannel()
+        
+        // 先启动前台服务，确保在5秒内调用startForeground()
+        startForegroundService()
 
+        // 然后再创建ExoPlayer和MediaSession
         val player = ExoPlayer.Builder(this).build()
         mediaSession = MediaSession.Builder(this, player)
             .setId("JianyinMusicSession")
@@ -107,8 +107,8 @@ class PlaybackService : MediaSessionService() {
             }
         }
 
-        startForegroundService()
-        return super.onStartCommand(intent, flags, startId)
+        // 不再在这里创建前台服务通知，由 MediaSessionManager 管理
+        return START_STICKY
     }
 
     /**
@@ -135,6 +135,7 @@ class PlaybackService : MediaSessionService() {
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .build()
 
+        // 直接调用 startForeground，确保服务在 5 秒内启动前台模式
         startForeground(NOTIFICATION_ID, notification)
     }
 

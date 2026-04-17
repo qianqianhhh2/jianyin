@@ -16,11 +16,12 @@ import retrofit2.http.Url
  */
 data class Song(
     val id: String = "",
-    val name: String = "未知歌曲",
-    val artist: String = "未知歌手",
+    var name: String = "未知歌曲",
+    var artist: String = "未知歌手",
     val url: String = "",
     val pic: String = "",
-    val lrc: String? = null
+    val lrc: String? = null,
+    val isLocal: Boolean = false // 是否为本地歌曲
 )
 
 /**

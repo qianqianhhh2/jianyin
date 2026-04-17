@@ -13,6 +13,7 @@ object DownloadSettingsStore {
     private const val KEY_USE_CUSTOM_PATH = "use_custom_path"
     private const val KEY_DOWNLOAD_QUALITY = "download_quality"
     private const val KEY_PLAY_QUALITY = "play_quality"
+    private const val KEY_LYRIC_SOURCE = "lyric_source" // 0: 内嵌, 1: 网络
     
     /**
      * 获取当前下载路径
@@ -115,5 +116,26 @@ object DownloadSettingsStore {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putInt(KEY_PLAY_QUALITY, quality)
             .apply()
+    }
+    
+    /**
+     * 获取歌词来源设置
+     * @param context 上下文
+     * @return 歌词来源，0: 内嵌, 1: 网络，默认 0
+     */
+    fun getLyricSource(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_LYRIC_SOURCE, 0)
+    }
+    
+    /**
+     * 设置歌词来源
+     * @param context 上下文
+     * @param source 歌词来源，0: 内嵌, 1: 网络
+     */
+    fun setLyricSource(context: Context, source: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_LYRIC_SOURCE, source)
+            .commit()
     }
 }
