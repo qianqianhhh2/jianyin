@@ -94,6 +94,9 @@ import com.qian.jianyin.OnboardingScreen
 import com.qian.jianyin.HitokotoManager
 import com.qian.jianyin.PermissionManager
 import com.qian.jianyin.PermissionCheck
+import com.qian.jianyin.VersionChecker
+import com.qian.jianyin.VersionUpdate
+import com.qian.jianyin.VersionUpdateDialog
 import androidx.media3.common.util.UnstableApi
 import dev.chrisbanes.haze.ExperimentalHazeApi
 import dev.chrisbanes.haze.HazeState
@@ -192,6 +195,10 @@ class MainActivity : ComponentActivity() {
             val onboardingManager = remember { OnboardingManager(context) }
             val isFirstLaunch = remember { mutableStateOf(onboardingManager.isFirstLaunch()) }
             
+            // 版本更新相关状态
+            val showVersionUpdateDialog = remember { mutableStateOf(false) }
+            val versionUpdate = remember { mutableStateOf<VersionUpdate?>(null) }
+            
             val darkTheme = isSystemInDarkTheme()
             val colorScheme = if (darkTheme) darkColorScheme(
                 primary = Color(0xFFA7C2F7),
@@ -249,7 +256,27 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                    
+                    // 版本检查
+                    LaunchedEffect(Unit) {
+                        val versionChecker = VersionChecker(context)
+                        val update = versionChecker.checkForUpdates()
+                        if (update != null) {
+                            versionUpdate.value = update
+                            showVersionUpdateDialog.value = true
+                        }
+                    }
+                    
                     MainScreenFramework(vm)
+                    
+                    // 版本更新弹窗
+                    VersionUpdateDialog(
+                        isVisible = showVersionUpdateDialog.value,
+                        versionUpdate = versionUpdate.value,
+                        onDismissRequest = {
+                            showVersionUpdateDialog.value = false
+                        }
+                    )
                 }
             }
         }
