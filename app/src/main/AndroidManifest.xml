@@ -69,5 +69,11 @@
             </intent-filter>
         </service>
 
+        <!-- B站网页登录 -->
+        <activity
+            android:name="moe.ouom.biliapi.BiliWebLoginActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
     </application>
 </manifest>

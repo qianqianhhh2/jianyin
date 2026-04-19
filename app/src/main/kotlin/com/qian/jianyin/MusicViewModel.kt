@@ -18,9 +18,15 @@ import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.converter.scalars.ScalarsConverterFactory
+import moe.ouom.biliapi.BiliApi
+import moe.ouom.biliapi.BiliWebLoginHelper
+import moe.ouom.biliapi.BiliAudioStreamInfo
+import moe.ouom.biliapi.SavedCookieAuthState
 
 // 进度条样式枚举
 enum class ProgressBarStyle {
@@ -75,9 +81,20 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     // 推荐搜索词
     val recommendedSearches = listOf("周杰伦", "陈奕迅", "林俊杰", "五月天", "邓紫棋", "告白气球", "十周年", "平凡之路")
 
+    // B站相关状态
+    val biliLoginState = mutableStateOf<BiliLoginState>(BiliLoginState.Unknown)
+    private val biliApi: BiliApi by lazy { BiliApi.getInstance(application) }
 
+    enum class BiliLoginState {
+        Unknown,    // 未知状态
+        NotLoggedIn, // 未登录
+        LoggedIn,   // 已登录
+        Expired     // 登录已过期
+    }
 
-    val player = ExoPlayer.Builder(application).build()
+    val player: ExoPlayer by lazy {
+        BiliPlayerHelper.createPlayer(application, biliApi)
+    }
     private val prefs = application.getSharedPreferences("music_prefs", Context.MODE_PRIVATE)
     private val gson = Gson()
     private var progressJob: Job? = null
@@ -130,11 +147,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 if (isPlayingNow) {
                     totalDuration.longValue = player.duration
                     startProgressUpdater()
-                    
+
                     mediaSessionManager.updatePlaybackState(true, player.currentPosition)
                 } else {
                     progressJob?.cancel()
-                    
+
                     mediaSessionManager.updatePlaybackState(false, player.currentPosition)
                 }
             }
@@ -146,7 +163,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     nextSong()
                 }
             }
-            
+
             override fun onPositionDiscontinuity(
                 oldPosition: Player.PositionInfo,
                 newPosition: Player.PositionInfo,
@@ -158,16 +175,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     position = player.currentPosition
                 )
             }
-            
+
             override fun onEvents(player: Player, events: Player.Events) {
                 // 当歌曲准备好时，更新总时长
-                if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) && 
+                if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) &&
                     player.playbackState == Player.STATE_READY) {
-                    
+
                     val duration = player.duration
                     if (duration > 0 && currentSong.value != null) {
                         totalDuration.longValue = duration
-                        
+
                         currentSong.value?.let { song ->
                             mediaSessionManager.updateMetadata(
                                 title = song.name,
@@ -177,12 +194,98 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                                 artworkUrl = song.pic
                             )
                         }
-                        
+
                         Log.d("MusicVM", "歌曲已准备好，时长: $duration")
                     }
                 }
             }
         })
+
+        // 初始化B站登录状态监听
+        initializeBiliLoginStateListener()
+    }
+
+    private fun initializeBiliLoginStateListener() {
+        viewModelScope.launch {
+            biliApi.authHealthFlow.collect { health ->
+                val newState = when (health.state) {
+                    SavedCookieAuthState.Missing -> BiliLoginState.NotLoggedIn
+                    SavedCookieAuthState.Valid -> BiliLoginState.LoggedIn
+                    SavedCookieAuthState.Expired, SavedCookieAuthState.Invalid -> {
+                        if (health.loginCookieKeys.isNotEmpty()) {
+                            BiliLoginState.Expired
+                        } else {
+                            BiliLoginState.NotLoggedIn
+                        }
+                    }
+                }
+                if (biliLoginState.value != newState) {
+                    biliLoginState.value = newState
+                    Log.d("MusicVM", "B站登录状态变更: $newState")
+                    if (newState == BiliLoginState.Expired) {
+                        clearBiliPlaylists()
+                    }
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            validateBiliLogin()
+        }
+    }
+
+    suspend fun validateBiliLogin(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val isValid = biliApi.validateLoginSession()
+            val state = if (isValid == true) BiliLoginState.LoggedIn else BiliLoginState.NotLoggedIn
+            biliLoginState.value = state
+            state == BiliLoginState.LoggedIn
+        } catch (e: Exception) {
+            Log.e("MusicVM", "验证B站登录失败", e)
+            biliLoginState.value = BiliLoginState.NotLoggedIn
+            false
+        }
+    }
+
+    private fun clearBiliPlaylists() {
+        val context = getApplication<Application>()
+        val playlists = PlaylistDataStore.getAll(context)
+        val biliPlaylists = playlists.filter { it.id.startsWith("bili_") }
+        biliPlaylists.forEach { playlist ->
+            PlaylistDataStore.delete(context, playlist.id)
+        }
+        Log.d("MusicVM", "已清除${biliPlaylists.size}个过期的B站歌单")
+    }
+
+    suspend fun syncBiliPlaylists(): List<UserSyncedPlaylist>? = withContext(Dispatchers.IO) {
+        try {
+            val context = getApplication<Application>()
+            val folders = biliApi.getUserFavFolders()
+            val playlists = folders.map { folder ->
+                val songs = biliApi.getFavFolderItems(folder.id)
+                UserSyncedPlaylist(
+                    id = "bili_${folder.id}",
+                    name = folder.name,
+                    coverPic = folder.cover,
+                    songs = songs.map { item ->
+                        Song(
+                            id = item.bvid,
+                            name = item.title,
+                            artist = item.owner,
+                            url = "",
+                            pic = item.pic,
+                            isBiliVideo = true,
+                            bvid = item.bvid,
+                            cid = item.cid
+                        )
+                    }
+                )
+            }
+            playlists
+        } catch (e: Exception) {
+            Log.e("MusicVM", "同步B站歌单失败", e)
+            null
+        }
     }
     
     /**
@@ -434,47 +537,127 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 localCoverPath = DownloadManager.getLocalCoverPath(context, song)
             }
             
-            // 处理播放音质
-            val playQuality = DownloadSettingsStore.getPlayQuality(context)
-            val finalUrl = if (!song.isLocal && localSongPath == null && playQuality != 320) {
-                // 非本地文件且非默认音质，添加br参数
-                if (song.url.contains("?")) {
-                    "${song.url}&br=$playQuality"
-                } else {
-                    "${song.url}?br=$playQuality"
-                }
-            } else {
-                song.url
-            }
-            
             val mediaMetadata = MediaMetadata.Builder()
                 .setTitle(song.name)
                 .setArtist(song.artist)
-                .setArtworkUri(Uri.parse(localCoverPath ?: song.pic))
+                .setArtworkUri(if (localCoverPath != null) Uri.fromFile(File(localCoverPath)) else Uri.parse(song.pic))
                 .build()
+            
+            // 处理播放音质
+            var finalUrl = song.url
+            
+            // 处理B站视频
+            if (song.isBiliVideo) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    // 首先检查本地是否有下载的文件
+                    if (localSongPath != null) {
+                        // 使用本地文件播放
+                        withContext(Dispatchers.Main) {
+                            val mediaItem = MediaItem.Builder()
+                                .setUri(Uri.fromFile(File(localSongPath)))
+                                .setMediaMetadata(mediaMetadata)
+                                .build()
 
-            val mediaItem = MediaItem.Builder()
-                .setUri(Uri.parse(localSongPath ?: finalUrl))
-                .setMediaMetadata(mediaMetadata)
-                .build()
+                            player.setMediaItem(mediaItem)
+                            player.prepare()
+                            player.play()
+                        }
+                        
+                        // 更新播放状态
+                        withContext(Dispatchers.Main) {
+                            isPlaying.value = true
+                            // 更新媒体会话
+                            mediaSessionManager.updateMetadata(
+                                title = song.name,
+                                artist = song.artist,
+                                album = "专辑",
+                                duration = 0L, // 初始为0，播放器准备好后自动更新
+                                artworkUrl = localCoverPath ?: song.pic
+                            )
+                            mediaSessionManager.updatePlaybackState(true, 0L)
+                        }
+                        
+                        Log.d("MusicVM", "使用本地文件播放B站视频: ${song.name}")
+                    } else {
+                        // 从网络获取音频流
+                        try {
+                            val streamInfo = biliApi.getBestAudioStream(song.bvid, song.cid)
+                            if (streamInfo != null && streamInfo.url.isNotEmpty()) {
+                                finalUrl = streamInfo.url
+                                // 重新创建mediaItem并播放 - 必须在主线程执行
+                                withContext(Dispatchers.Main) {
+                                    // Headers已通过BiliPlayerHelper添加
+                                    val mediaItem = MediaItem.Builder()
+                                        .setUri(Uri.parse(finalUrl))
+                                        .setMediaMetadata(mediaMetadata)
+                                        .build()
 
-            player.setMediaItem(mediaItem)
-            player.prepare()
-            player.play()
+                                    player.setMediaItem(mediaItem)
+                                    player.prepare()
+                                    player.play()
+                                }
+                                
+                                // 更新播放状态
+                                withContext(Dispatchers.Main) {
+                                    isPlaying.value = true
+                                    // 更新媒体会话
+                                    mediaSessionManager.updateMetadata(
+                                        title = song.name,
+                                        artist = song.artist,
+                                        album = "专辑",
+                                        duration = 0L, // 初始为0，播放器准备好后自动更新
+                                        artworkUrl = localCoverPath ?: song.pic
+                                    )
+                                    mediaSessionManager.updatePlaybackState(true, 0L)
+                                }
+                                
+                                Log.d("MusicVM", "B站视频音频流获取成功: ${song.name}")
+                            } else {
+                                Log.e("MusicVM", "B站视频音频流获取失败")
+                            }
+                        } catch (e: Exception) {
+                            Log.e("MusicVM", "获取B站音频流错误", e)
+                        }
+                    }
+                }
+            }
             
-            isPlaying.value = true
-            
-            //更新媒体会话
-            mediaSessionManager.updateMetadata(
-                title = song.name,
-                artist = song.artist,
-                album = "专辑",
-                duration = 0L, // 初始为0，播放器准备好后自动更新
-                artworkUrl = localCoverPath ?: song.pic
-            )
-            mediaSessionManager.updatePlaybackState(true, 0L)
-            
-            Log.d("MusicVM", "播放器已开始准备: ${song.name}")
+            if (!song.isBiliVideo) {
+                val playQuality = DownloadSettingsStore.getPlayQuality(context)
+                finalUrl = if (!song.isLocal && localSongPath == null && playQuality != 320) {
+                    // 非本地文件且非默认音质，添加br参数
+                    if (song.url.contains("?")) {
+                        "${song.url}&br=$playQuality"
+                    } else {
+                        "${song.url}?br=$playQuality"
+                    }
+                } else {
+                    song.url
+                }
+                
+                val mediaItem = MediaItem.Builder()
+                    .setUri(if (song.isLocal && localSongPath != null) Uri.fromFile(File(localSongPath)) else Uri.parse(finalUrl))
+                    .setMediaMetadata(mediaMetadata)
+                    .build()
+
+                player.setMediaItem(mediaItem)
+                player.prepare()
+                player.play()
+                
+                isPlaying.value = true
+                
+                //更新媒体会话
+                mediaSessionManager.updateMetadata(
+                    title = song.name,
+                    artist = song.artist,
+                    album = "专辑",
+                    duration = 0L, // 初始为0，播放器准备好后自动更新
+                    artworkUrl = localCoverPath ?: song.pic
+                )
+                mediaSessionManager.updatePlaybackState(true, 0L)
+                
+                Log.d("MusicVM", "播放器已开始准备: ${song.name}")
+            }
             
         } catch (e: Exception) {
             Log.e("MusicVM", "播放初始化错误", e)

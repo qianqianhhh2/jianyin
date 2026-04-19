@@ -47,6 +47,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.min
+import moe.ouom.biliapi.BiliWebLoginHelper
+import moe.ouom.biliapi.BiliApi
 
 
 
@@ -386,7 +388,6 @@ fun MyMusicScreenV2(
                 syncedPlaylists.forEach { playlist ->
                     PlaylistItemV6(
                         playlist = playlist,
-                        colorScheme = colorScheme,
                         onClick = {
                             activePlaylist = playlist
                         },
@@ -401,8 +402,9 @@ fun MyMusicScreenV2(
 
         // --- 弹窗逻辑 1：添加歌单 ---
         if (showAddDialog) {
-            var selectedSource by remember { mutableStateOf(0) } // 0: 网易云歌单, 1: 本地歌单
-            
+            var selectedSource by remember { mutableStateOf(0) } // 0: 网易云歌单, 1: 本地歌单, 2: B站歌单
+            var isSyncingBili by remember { mutableStateOf(false) }
+
             AlertDialog(
                 onDismissRequest = { showAddDialog = false },
                 containerColor = colorScheme.surface,
@@ -434,63 +436,151 @@ fun MyMusicScreenV2(
                                 )
                                 Text("本地歌单")
                             }
+                            Column(
+                                modifier = Modifier.weight(1f).clickable { selectedSource = 2 },
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                RadioButton(
+                                    selected = selectedSource == 2,
+                                    onClick = { selectedSource = 2 }
+                                )
+                                Text("B站歌单")
+                            }
                         }
-                        
+
                         // 根据选择显示不同的输入界面
-                        if (selectedSource == 0) {
-                            OutlinedTextField(
-                                value = playlistIdInput,
-                                onValueChange = { playlistIdInput = it },
-                                label = { Text("输入分享内容") },
-                                placeholder = { Text("例如：分享歌单: 谦谦=12793863438&creatorId=12638542831") },
-                                singleLine = true
-                            )
-                        } else {
-                            Text("选择本地文件夹导入歌曲")
+                        when (selectedSource) {
+                            0 -> {
+                                OutlinedTextField(
+                                    value = playlistIdInput,
+                                    onValueChange = { playlistIdInput = it },
+                                    label = { Text("输入分享内容") },
+                                    placeholder = { Text("例如：分享歌单: 谦谦=12793863438&creatorId=12638542831") },
+                                    singleLine = true
+                                )
+                            }
+                            1 -> {
+                                Text("选择本地文件夹导入歌曲")
+                            }
+                            2 -> {
+                                when (vm.biliLoginState.value) {
+                                    MusicViewModel.BiliLoginState.LoggedIn -> {
+                                        Text("已登录B站账号", color = colorScheme.primary)
+                                    }
+                                    MusicViewModel.BiliLoginState.NotLoggedIn, MusicViewModel.BiliLoginState.Expired -> {
+                                        Text("未登录或登录已过期", color = colorScheme.error)
+                                    }
+                                    MusicViewModel.BiliLoginState.Unknown -> {
+                                        Text("正在检查登录状态...", color = colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
                         }
                     }
                 },
                 confirmButton = {
-                    Button(onClick = {
-                        if (selectedSource == 0) {
-                            // 网易云歌单
-                            if (playlistIdInput.isBlank()) return@Button
-                            scope.launch {
-                                // 从分享内容中提取歌单ID
-                                val playlistId = extractPlaylistId(playlistIdInput)
-                                if (playlistId.isNullOrBlank()) {
-                                    Toast.makeText(context, "无法提取歌单ID，请检查输入", Toast.LENGTH_SHORT).show()
-                                    return@launch
+                    when (selectedSource) {
+                        0 -> {
+                            Button(onClick = {
+                                if (playlistIdInput.isBlank()) return@Button
+                                scope.launch {
+                                    val playlistId = extractPlaylistId(playlistIdInput)
+                                    if (playlistId.isNullOrBlank()) {
+                                        Toast.makeText(context, "无法提取歌单ID，请检查输入", Toast.LENGTH_SHORT).show()
+                                        return@launch
+                                    }
+                                    val songs = PlaylistSyncManager.fetchPlaylist(playlistId, context)
+                                    if (songs != null) {
+                                        val newList = UserSyncedPlaylist(playlistId, "新歌单_${playlistId}", songs.firstOrNull()?.pic ?: "", songs)
+                                        PlaylistDataStore.save(context, newList)
+                                        syncedPlaylists.clear()
+                                        syncedPlaylists.addAll(PlaylistDataStore.getAll(context))
+                                        showAddDialog = false
+                                        playlistIdInput = ""
+                                        Toast.makeText(context, "同步成功", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "同步失败，请检查分享内容", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
-                                val songs = PlaylistSyncManager.fetchPlaylist(playlistId, context)
-                                if (songs != null) {
-                                    val newList = UserSyncedPlaylist(playlistId, "新歌单_${playlistId}", songs.firstOrNull()?.pic ?: "", songs)
-                                    PlaylistDataStore.save(context, newList)
-                                    syncedPlaylists.clear()
-                                    syncedPlaylists.addAll(PlaylistDataStore.getAll(context))
-                                    showAddDialog = false
-                                    playlistIdInput = ""
-                                    Toast.makeText(context, "同步成功", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(context, "同步失败，请检查分享内容", Toast.LENGTH_SHORT).show()
-                                }
+                            }) {
+                                Text("同步")
                             }
-                        } else {
-                            // 本地歌单：打开文件选择器
-                            showAddDialog = false
-                            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-                            intent.addCategory(Intent.CATEGORY_DEFAULT)
-                            
-                            // 设置回调函数，当文件夹选择完成后会被调用
-                            (context as? MainActivity)?.folderUriCallback = {
-                                folderUri = it
-                            }
-                            
-                            // 启动文件夹选择器
-                            (context as? android.app.Activity)?.startActivityForResult(intent, 1001)
                         }
-                    }) {
-                        Text(if (selectedSource == 0) "同步" else "选择文件夹")
+                        1 -> {
+                            Button(onClick = {
+                                showAddDialog = false
+                                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                                intent.addCategory(Intent.CATEGORY_DEFAULT)
+                                (context as? MainActivity)?.folderUriCallback = {
+                                    folderUri = it
+                                }
+                                (context as? android.app.Activity)?.startActivityForResult(intent, 1001)
+                            }) {
+                                Text("选择文件夹")
+                            }
+                        }
+                        2 -> {
+                            when (vm.biliLoginState.value) {
+                                MusicViewModel.BiliLoginState.LoggedIn -> {
+                                    Button(
+                                        onClick = {
+                                            if (isSyncingBili) return@Button
+                                            scope.launch {
+                                                isSyncingBili = true
+                                                val playlists = vm.syncBiliPlaylists()
+                                                if (playlists != null) {
+                                                    val context = context
+                                                    playlists.forEach { playlist ->
+                                                        PlaylistDataStore.save(context, playlist)
+                                                    }
+                                                    syncedPlaylists.clear()
+                                                    syncedPlaylists.addAll(PlaylistDataStore.getAll(context))
+                                                    Toast.makeText(context, "同步成功，共${playlists.size}个歌单", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    Toast.makeText(context, "同步失败", Toast.LENGTH_SHORT).show()
+                                                }
+                                                isSyncingBili = false
+                                                showAddDialog = false
+                                            }
+                                        },
+                                        enabled = !isSyncingBili
+                                    ) {
+                                        if (isSyncingBili) {
+                                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                        } else {
+                                            Text("刷新")
+                                        }
+                                    }
+                                }
+                                MusicViewModel.BiliLoginState.NotLoggedIn, MusicViewModel.BiliLoginState.Expired -> {
+                                    Button(onClick = {
+                                        showAddDialog = false
+                                        BiliWebLoginHelper.startLoginWithResult(context as androidx.activity.ComponentActivity) { json ->
+                                            if (json != null) {
+                                                val saved = BiliApi.getInstance(context).saveCookiesFromJson(json)
+                                                if (saved) {
+                                                    Toast.makeText(context, "登录成功", Toast.LENGTH_SHORT).show()
+                                                    scope.launch {
+                                                        vm.validateBiliLogin()
+                                                    }
+                                                } else {
+                                                    Toast.makeText(context, "保存登录信息失败", Toast.LENGTH_SHORT).show()
+                                                }
+                                            } else {
+                                                Toast.makeText(context, "登录失败", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }) {
+                                        Text("登录")
+                                    }
+                                }
+                                MusicViewModel.BiliLoginState.Unknown -> {
+                                    Button(onClick = {}, enabled = false) {
+                                        Text("等待")
+                                    }
+                                }
+                            }
+                        }
                     }
                 },
                 dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("取消") } }

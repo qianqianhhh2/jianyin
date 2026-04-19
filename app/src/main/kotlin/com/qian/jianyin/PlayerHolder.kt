@@ -1,4 +1,3 @@
-// 【新建文件：PlayerHolder.kt】
 package com.qian.jianyin
 
 import android.content.Context

@@ -5,6 +5,7 @@ import android.os.Environment
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.ouom.biliapi.BiliApi
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -20,6 +21,9 @@ import java.io.FileOutputStream
  * @property pic 歌曲封面地址
  * @property lrc 歌词内容
  * @property downloadTime 下载时间戳
+ * @property isBiliVideo 是否为B站视频
+ * @property bvid B站视频ID
+ * @property cid B站视频cid
  */
 data class SongMetadata(
     val id: String,
@@ -28,7 +32,10 @@ data class SongMetadata(
     val url: String,
     val pic: String,
     val lrc: String?,
-    val downloadTime: Long = System.currentTimeMillis()
+    val downloadTime: Long = System.currentTimeMillis(),
+    val isBiliVideo: Boolean = false,
+    val bvid: String = "",
+    val cid: Long = 0
 )
 
 /**
@@ -65,21 +72,24 @@ object DownloadManager {
             
             val results = mutableListOf<String>()
             
-            song.url.let { url ->
+            var audioUrl = song.url
+            
+            // 处理B站视频
+            if (song.isBiliVideo && song.bvid.isNotEmpty()) {
+                val biliApi = BiliApi.getInstance(context)
+                val streamInfo = biliApi.getBestAudioStream(song.bvid, song.cid)
+                if (streamInfo != null && streamInfo.url.isNotEmpty()) {
+                    audioUrl = streamInfo.url
+                } else {
+                    throw Exception("无法获取B站音频流")
+                }
+            }
+            
+            audioUrl.let { url ->
                 val audioFile = File(songDir, "${sanitizeFileName(song.name)}.mp3")
                 if (!audioFile.exists()) {
-                    // 根据下载音质设置添加br参数
-                    val downloadQuality = DownloadSettingsStore.getDownloadQuality(context)
-                    val finalUrl = if (downloadQuality != 320) {
-                        if (url.contains("?")) {
-                            "${url}&br=$downloadQuality"
-                        } else {
-                            "${url}?br=$downloadQuality"
-                        }
-                    } else {
-                        url
-                    }
-                    downloadFile(finalUrl, audioFile, progressCallback)
+                    // 下载音频文件
+                    downloadFile(url, audioFile, progressCallback, song.isBiliVideo, context)
                     results.add("音频文件")
                 }
             }
@@ -105,9 +115,12 @@ object DownloadManager {
                 id = song.id,
                 name = song.name,
                 artist = song.artist,
-                url = song.url,
+                url = audioUrl,
                 pic = song.pic,
-                lrc = song.lrc
+                lrc = song.lrc,
+                isBiliVideo = song.isBiliVideo,
+                bvid = song.bvid,
+                cid = song.cid
             )
             metadataFile.writeText(gson.toJson(metadata))
             results.add("元数据")
@@ -208,9 +221,29 @@ object DownloadManager {
      * 下载文件
      * @param url 文件URL
      * @param outputFile 目标文件
+     * @param progressCallback 进度回调
+     * @param isBiliStream 是否为B站音频流
      */
-    private suspend fun downloadFile(url: String, outputFile: File, progressCallback: ((Float) -> Unit)? = null) {
-        val request = Request.Builder().url(url).build()
+    private suspend fun downloadFile(url: String, outputFile: File, progressCallback: ((Float) -> Unit)? = null, isBiliStream: Boolean = false, context: Context? = null) {
+        val requestBuilder = Request.Builder().url(url)
+        
+        // 为B站音频流添加必要的headers
+        if (isBiliStream && context != null) {
+            val biliApi = BiliApi.getInstance(context)
+            val cookies = biliApi.getCookies()
+            val cookieString = if (cookies.isNotEmpty()) {
+                cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
+            } else ""
+            
+            requestBuilder
+                .header("Referer", "https://www.bilibili.com")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+            if (cookieString.isNotEmpty()) {
+                requestBuilder.header("Cookie", cookieString)
+            }
+        }
+        
+        val request = requestBuilder.build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw Exception("下载失败: ${response.code}")
             

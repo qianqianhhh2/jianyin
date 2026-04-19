@@ -18,3 +18,4 @@ dependencyResolutionManagement {
 rootProject.name = "jianyin"
 
 include(":app")
+include(":bili-api")

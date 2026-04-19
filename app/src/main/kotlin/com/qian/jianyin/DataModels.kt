@@ -21,7 +21,10 @@ data class Song(
     val url: String = "",
     val pic: String = "",
     val lrc: String? = null,
-    val isLocal: Boolean = false // 是否为本地歌曲
+    val isLocal: Boolean = false, // 是否为本地歌曲
+    val isBiliVideo: Boolean = false, // 是否为B站视频
+    val bvid: String = "", // B站视频ID
+    val cid: Long = 0 // B站视频的cid
 )
 
 /**
