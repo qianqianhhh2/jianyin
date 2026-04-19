@@ -8,7 +8,7 @@
 
 [![Android API](https://img.shields.io/badge/API-21%2B-brightgreen.svg?style=flat-square)](https://android-arsenal.com/api?level=21)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.0-blue.svg?style=flat-square)](https://kotlinlang.org)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPL%203.0-blue.svg?style=flat-square)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/qianqianhhh2/jianyin?style=flat-square)](https://github.com/qianqianhhh2/jianyin/stargazers)
 [![GitHub Forks](https://img.shields.io/github/forks/qianqianhhh2/jianyin?style=flat-square)](https://github.com/qianqianhhh2/jianyin/network/members)
 
@@ -71,6 +71,9 @@ jianyin/
 │       │   ├── MainActivity.kt              # 主 Activity
 │       │   ├── MusicViewModel.kt            # 音乐视图模型
 │       │   ├── DataModels.kt                # 数据模型
+│       │   ├── VersionChecker.kt            # 版本检查器
+│       │   ├── VersionUpdateDialog.kt       # 版本更新弹窗
+│       │   ├── MyMusicScreenV2.kt           # 我的音乐界面
 │       │   ├── 播放器核心组件/
 │       │   │   ├── MusicPlayerManager.kt    # 播放管理器
 │       │   │   ├── PlaybackService.kt        # 后台服务
@@ -95,10 +98,15 @@ jianyin/
 │       │       ├── GlassmorphismUtils.kt    # 毛玻璃工具
 │       │       └── MaterialUtils.kt         # Material 工具
 │       └── res/                             # 资源文件
+├── bili-api/                                # Bilibili API 模块
+│   ├── src/main/java/moe/ouom/biliapi/      # Bili API 代码
+│   ├── build.gradle.kts                     # 模块构建配置
+│   └── README.md                            # 模块说明
 ├── gradle/
 │   └── libs.versions.toml                   # 依赖版本管理
 ├── build.gradle                            # 根构建配置
-└── settings.gradle                         # 项目设置
+├── settings.gradle                         # 项目设置
+└── LICENSE                                 # GPL 3.0 许可证
 ```
 
 ## 快速开始
@@ -218,7 +226,10 @@ chore: 构建/工具相关
 
 ## 许可证
 
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
+本项目采用 GNU General Public License v3.0 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
+
+本项目包含来自 NeriPlayer 的修改代码：
+https://github.com/cwuom/NeriPlayer
 
 ## 致谢
 
