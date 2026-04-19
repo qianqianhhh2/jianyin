@@ -275,10 +275,7 @@ chore: 构建/工具相关
 
 ## 许可证
 
-本项目采用 GNU General Public License v3.0 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
-
-本项目包含来自 NeriPlayer 的修改代码：
-https://github.com/cwuom/NeriPlayer
+本项目采用 GPL-3.0 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
 
 ## 致谢
 
