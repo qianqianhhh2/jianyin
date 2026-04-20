@@ -35,9 +35,16 @@ class BiliWebLoginHelper {
                         return null
                     }
                 }
-            ) { json ->
-                callback(json)
+            ) {
+                callback(it)
             }
+            launcher.launch(Intent(activity, getBiliWebLoginActivityClass()))
+        }
+
+        fun startLoginWithExistingLauncher(
+            activity: Activity,
+            launcher: ActivityResultLauncher<Intent>
+        ) {
             launcher.launch(Intent(activity, getBiliWebLoginActivityClass()))
         }
 

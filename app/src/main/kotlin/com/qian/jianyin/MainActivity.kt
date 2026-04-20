@@ -97,6 +97,7 @@ import com.qian.jianyin.PermissionCheck
 import com.qian.jianyin.VersionChecker
 import com.qian.jianyin.VersionUpdate
 import com.qian.jianyin.VersionUpdateDialog
+import moe.ouom.biliapi.BiliWebLoginHelper
 import androidx.media3.common.util.UnstableApi
 import dev.chrisbanes.haze.ExperimentalHazeApi
 import dev.chrisbanes.haze.HazeState
@@ -144,10 +145,88 @@ class MainActivity : ComponentActivity() {
     var folderUriCallback: ((Uri) -> Unit)? = null
     // 用于存储 ViewModel 引用，以便在 onActivityResult 中使用
     private var viewModel: MusicViewModel? = null
+    // 用于 B 站登录的 ActivityResultLauncher
+    private lateinit var biliLoginLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        // 初始化 B 站登录的 ActivityResultLauncher
+        biliLoginLauncher = registerForActivityResult(
+            object : androidx.activity.result.contract.ActivityResultContract<android.content.Intent, String?>() {
+                override fun createIntent(context: android.content.Context, input: android.content.Intent): android.content.Intent {
+                    return input
+                }
+
+                override fun parseResult(resultCode: Int, intent: android.content.Intent?): String? {
+                    if (resultCode == android.app.Activity.RESULT_OK) {
+                        val cookieJson = intent?.getStringExtra(moe.ouom.biliapi.BiliWebLoginHelper.Companion.RESULT_COOKIE)
+                        Log.d("BiliLogin", "parseResult: 收到Cookie JSON: $cookieJson")
+                        return cookieJson
+                    }
+                    Log.d("BiliLogin", "parseResult: 登录失败，resultCode: $resultCode")
+                    return null
+                }
+            }
+        ) { json ->
+            Log.d("BiliLogin", "回调: 收到JSON: $json")
+            if (json != null) {
+                try {
+                    val biliApi = moe.ouom.biliapi.BiliApi.getInstance(this)
+                    Log.d("BiliLogin", "回调: 调用saveCookiesFromJson")
+                    val saved = biliApi.saveCookiesFromJson(json)
+                    Log.d("BiliLogin", "回调: saveCookiesFromJson结果: $saved")
+                    if (saved) {
+                            android.widget.Toast.makeText(
+                                this,
+                                "登录成功",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                            lifecycleScope.launch {
+                                Log.d("BiliLogin", "回调: 验证登录状态")
+                                val loginValid = viewModel?.validateBiliLogin()
+                                if (loginValid == true) {
+                                    Log.d("BiliLogin", "回调: 开始同步 B 站歌单")
+                                    val playlists = viewModel?.syncBiliPlaylists()
+                                    if (playlists != null && playlists.isNotEmpty()) {
+                                        Log.d("BiliLogin", "回调: 同步到 ${playlists.size} 个 B 站收藏")
+                                        android.widget.Toast.makeText(
+                                            this@MainActivity,
+                                            "已获取到 ${playlists.size} 个收藏",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                        // 触发歌单更新，通知 UI 刷新
+                                        viewModel?.playlistUpdateTrigger?.intValue = (viewModel?.playlistUpdateTrigger?.intValue ?: 0) + 1
+                                    } else {
+                                        Log.d("BiliLogin", "回调: 未同步到 B 站收藏")
+                                        android.widget.Toast.makeText(
+                                            this@MainActivity,
+                                            "未获取到收藏",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            }
+                        } else {
+                            android.widget.Toast.makeText(
+                                this,
+                                "保存登录信息失败",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                } catch (e: Exception) {
+                    Log.e("BiliLogin", "回调: 保存Cookie时发生异常", e)
+                    android.widget.Toast.makeText(
+                        this,
+                        "保存登录信息失败: ${e.message}",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } else {
+                Log.d("BiliLogin", "回调: 收到null JSON")
+            }
+        }
         
         // 初始化 Coil ImageLoader 以支持 GIF
         val imageLoader = coil.ImageLoader.Builder(this)
@@ -341,6 +420,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+    
+    // 启动 B 站登录
+    fun startBiliLogin() {
+        BiliWebLoginHelper.startLoginWithExistingLauncher(this, biliLoginLauncher)
     }
 }
 

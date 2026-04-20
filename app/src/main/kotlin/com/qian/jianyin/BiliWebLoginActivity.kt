@@ -152,12 +152,15 @@ class BiliWebLoginActivity : ComponentActivity() {
                 "m.bilibili.com"
             )
         )
+        android.util.Log.d("BiliLogin", "returnLoginResult: 读取到的cookieMap: $cookieMap")
 
         val json = org.json.JSONObject().apply {
             cookieMap.forEach { (k, v) -> put(k, v) }
         }.toString()
+        android.util.Log.d("BiliLogin", "returnLoginResult: 生成的JSON: $json")
 
         setResult(Activity.RESULT_OK, Intent().putExtra(RESULT_COOKIE, json))
+        android.util.Log.d("BiliLogin", "returnLoginResult: 返回登录结果")
         finish()
     }
 

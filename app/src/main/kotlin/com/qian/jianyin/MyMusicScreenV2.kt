@@ -462,7 +462,7 @@ fun MyMusicScreenV2(
                 Spacer(Modifier.height(12.dp))
 
                 // 同步歌单标题栏：改为 Add 图标
-                SectionHeaderV6("同步的歌单", Icons.Default.Add) {
+                SectionHeaderV6("我的歌单", Icons.Default.Add) {
                     showAddDialog = true
                 }
 
@@ -543,7 +543,7 @@ fun MyMusicScreenV2(
                                         value = playlistIdInput,
                                         onValueChange = { playlistIdInput = it },
                                         label = { Text("输入分享内容") },
-                                        placeholder = { Text("例如：分享歌单: 谦谦=12793863438&creatorId=12638542831") },
+                                        placeholder = { Text("直接复制你从网易云复制的内容") },
                                         singleLine = true
                                     )
                                 }
@@ -690,34 +690,7 @@ fun MyMusicScreenV2(
                                     MusicViewModel.BiliLoginState.NotLoggedIn, MusicViewModel.BiliLoginState.Expired -> {
                                         Button(onClick = {
                                             showAddDialog = false
-                                            BiliWebLoginHelper.startLoginWithResult(context as androidx.activity.ComponentActivity) { json ->
-                                                if (json != null) {
-                                                    val saved = BiliApi.getInstance(context)
-                                                        .saveCookiesFromJson(json)
-                                                    if (saved) {
-                                                        Toast.makeText(
-                                                            context,
-                                                            "登录成功",
-                                                            Toast.LENGTH_SHORT
-                                                        ).show()
-                                                        scope.launch {
-                                                            vm.validateBiliLogin()
-                                                        }
-                                                    } else {
-                                                        Toast.makeText(
-                                                            context,
-                                                            "保存登录信息失败",
-                                                            Toast.LENGTH_SHORT
-                                                        ).show()
-                                                    }
-                                                } else {
-                                                    Toast.makeText(
-                                                        context,
-                                                        "登录失败",
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
-                                                }
-                                            }
+                                            (context as MainActivity).startBiliLogin()
                                         }) {
                                             Text("登录")
                                         }

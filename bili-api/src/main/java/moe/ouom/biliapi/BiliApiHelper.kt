@@ -97,12 +97,22 @@ class BiliApi private constructor(
     }
 
     fun saveCookiesFromJson(json: String): Boolean {
+        android.util.Log.d("BiliLogin", "saveCookiesFromJson: 收到JSON: $json")
         return runCatching {
+            android.util.Log.d("BiliLogin", "saveCookiesFromJson: 解析JSON")
             val bundle = BiliAuthBundle.fromJson(json)
+            android.util.Log.d("BiliLogin", "saveCookiesFromJson: 解析结果 - cookies: ${bundle.cookies}, hasLoginCookies: ${bundle.hasLoginCookies()}")
             if (bundle.hasLoginCookies()) {
+                android.util.Log.d("BiliLogin", "saveCookiesFromJson: 保存cookies")
                 cookieRepo.saveCookies(bundle.cookies, bundle.savedAt)
+                android.util.Log.d("BiliLogin", "saveCookiesFromJson: 保存成功")
                 true
-            } else false
+            } else {
+                android.util.Log.d("BiliLogin", "saveCookiesFromJson: 没有登录凭证")
+                false
+            }
+        }.onFailure { e ->
+            android.util.Log.e("BiliLogin", "saveCookiesFromJson: 解析JSON失败", e)
         }.getOrDefault(false)
     }
 
@@ -1022,15 +1032,30 @@ data class BiliAuthBundle(
         fun fromJson(json: String): BiliAuthBundle {
             return runCatching {
                 val root = JSONObject(json)
-                val cookiesJson = root.optJSONObject("cookies") ?: JSONObject()
                 val cookies = linkedMapOf<String, String>()
-                val keys = cookiesJson.keys()
-                while (keys.hasNext()) {
-                    val key = keys.next()
-                    cookies[key] = cookiesJson.optString(key, "")
+                // 检查是否有"cookies"字段
+                if (root.has("cookies")) {
+                    // 标准格式: {"cookies": {...}, "savedAt": 123}
+                    val cookiesJson = root.optJSONObject("cookies") ?: JSONObject()
+                    val keys = cookiesJson.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        cookies[key] = cookiesJson.optString(key, "")
+                    }
+                } else {
+                    // 直接格式: {"key1": "value1", "key2": "value2"}
+                    val keys = root.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        cookies[key] = root.optString(key, "")
+                    }
                 }
-                val savedAt = root.optLong("savedAt", 0L)
+                val savedAt = root.optLong("savedAt", System.currentTimeMillis())
+                android.util.Log.d("BiliLogin", "fromJson: 解析后的cookies: $cookies, savedAt: $savedAt")
                 BiliAuthBundle(cookies = cookies, savedAt = savedAt).normalized(savedAt = savedAt)
+            }.onFailure { e ->
+                android.util.Log.e("BiliLogin", "fromJson: 解析失败", e)
+                BiliAuthBundle()
             }.getOrDefault(BiliAuthBundle())
         }
     }

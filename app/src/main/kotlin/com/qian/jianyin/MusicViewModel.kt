@@ -281,6 +281,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 )
             }
+            // 保存我的歌单到 PlaylistDataStore
+            playlists.forEach { playlist ->
+                PlaylistDataStore.save(context, playlist)
+            }
+            // 触发歌单更新，通知 UI 刷新
+            withContext(Dispatchers.Main) {
+                playlistUpdateTrigger.intValue++
+            }
             playlists
         } catch (e: Exception) {
             Log.e("MusicVM", "同步B站歌单失败", e)
