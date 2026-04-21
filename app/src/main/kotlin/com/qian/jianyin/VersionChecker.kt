@@ -69,9 +69,9 @@ class VersionChecker(private val context: Context) {
                     if (!responseBody.isNullOrEmpty()) {
                         val versionUpdate = gson.fromJson(responseBody, VersionUpdate::class.java)
                         
-                        // 比较版本代码
-                        val (currentVersionCode, _) = getCurrentVersion()
-                        if (versionUpdate.versionCode > currentVersionCode) {
+                        // 优先比较 versionName
+                        val (_, currentVersionName) = getCurrentVersion()
+                        if (compareVersionName(versionUpdate.versionName, currentVersionName) > 0) {
                             return@withContext versionUpdate
                         }
                     }
@@ -82,5 +82,29 @@ class VersionChecker(private val context: Context) {
                 null
             }
         }
+    }
+    
+    /**
+     * 比较两个版本名称
+     * @param version1 版本名称1
+     * @param version2 版本名称2
+     * @return 正数表示 version1 > version2，负数表示 version1 < version2，0表示相等
+     */
+    private fun compareVersionName(version1: String, version2: String): Int {
+        val v1Parts = version1.split(".").mapNotNull { it.toIntOrNull() }
+        val v2Parts = version2.split(".").mapNotNull { it.toIntOrNull() }
+        
+        val maxLen = maxOf(v1Parts.size, v2Parts.size)
+        
+        for (i in 0 until maxLen) {
+            val v1 = v1Parts.getOrElse(i) { 0 }
+            val v2 = v2Parts.getOrElse(i) { 0 }
+            
+            if (v1 != v2) {
+                return v1 - v2
+            }
+        }
+        
+        return 0
     }
 }
