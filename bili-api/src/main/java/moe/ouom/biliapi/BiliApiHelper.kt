@@ -22,6 +22,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
 import java.net.URLEncoder
 import java.security.MessageDigest
@@ -963,17 +964,65 @@ class BiliCookieRepository(private val context: Context) {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
-        encryptedPrefs = EncryptedSharedPreferences.create(
-            context,
-            BILI_AUTH_PREFS,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-        val initialBundle = loadAuthBundle()
-        _authFlow = MutableStateFlow(initialBundle)
-        _cookieFlow = MutableStateFlow(initialBundle.cookies)
-        _authHealthFlow = MutableStateFlow(evaluateBiliAuthHealth(initialBundle))
+        
+        var tempPrefs: SharedPreferences? = null
+        var tempAuthFlow: MutableStateFlow<BiliAuthBundle>? = null
+        var tempCookieFlow: MutableStateFlow<Map<String, String>>? = null
+        var tempHealthFlow: MutableStateFlow<SavedCookieAuthHealth>? = null
+        
+        try {
+            val prefs = EncryptedSharedPreferences.create(
+                context,
+                BILI_AUTH_PREFS,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+            val initialBundle = loadAuthBundle(prefs)
+            tempPrefs = prefs
+            tempAuthFlow = MutableStateFlow(initialBundle)
+            tempCookieFlow = MutableStateFlow(initialBundle.cookies)
+            tempHealthFlow = MutableStateFlow(evaluateBiliAuthHealth(initialBundle))
+        } catch (e: Exception) {
+            // 解密失败，尝试删除损坏的存储文件
+            android.util.Log.e("BiliCookieRepository", "解密失败，尝试删除损坏的存储文件", e)
+            try {
+                // 删除损坏的存储文件
+                val prefsFile = File(context.filesDir.parent, "shared_prefs/${BILI_AUTH_PREFS}.xml")
+                if (prefsFile.exists()) {
+                    prefsFile.delete()
+                }
+                // 重新创建EncryptedSharedPreferences实例
+                val prefs = EncryptedSharedPreferences.create(
+                    context,
+                    BILI_AUTH_PREFS,
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+                // 初始化状态
+                val emptyBundle = BiliAuthBundle()
+                tempPrefs = prefs
+                tempAuthFlow = MutableStateFlow(emptyBundle)
+                tempCookieFlow = MutableStateFlow(emptyMap())
+                tempHealthFlow = MutableStateFlow(SavedCookieAuthHealth(state = SavedCookieAuthState.Missing))
+            } catch (e2: Exception) {
+                // 如果删除文件或重新创建失败，使用普通的SharedPreferences作为备选方案
+                android.util.Log.e("BiliCookieRepository", "删除文件或重新创建失败，使用普通SharedPreferences", e2)
+                val prefs = context.getSharedPreferences(BILI_AUTH_PREFS, Context.MODE_PRIVATE)
+                prefs.edit { clear() }
+                val emptyBundle = BiliAuthBundle()
+                tempPrefs = prefs
+                tempAuthFlow = MutableStateFlow(emptyBundle)
+                tempCookieFlow = MutableStateFlow(emptyMap())
+                tempHealthFlow = MutableStateFlow(SavedCookieAuthHealth(state = SavedCookieAuthState.Missing))
+            }
+        }
+        
+        encryptedPrefs = tempPrefs!!
+        _authFlow = tempAuthFlow!!
+        _cookieFlow = tempCookieFlow!!
+        _authHealthFlow = tempHealthFlow!!
     }
 
     fun getCookiesOnce(): Map<String, String> = _cookieFlow.value
@@ -995,9 +1044,15 @@ class BiliCookieRepository(private val context: Context) {
         _authHealthFlow.value = SavedCookieAuthHealth(state = SavedCookieAuthState.Missing)
     }
 
-    private fun loadAuthBundle(): BiliAuthBundle {
-        val json = encryptedPrefs.getString(KEY_BILI_AUTH_BUNDLE, null) ?: return BiliAuthBundle()
-        return BiliAuthBundle.fromJson(json)
+    private fun loadAuthBundle(prefs: SharedPreferences): BiliAuthBundle {
+        return try {
+            val json = prefs.getString(KEY_BILI_AUTH_BUNDLE, null) ?: return BiliAuthBundle()
+            BiliAuthBundle.fromJson(json)
+        } catch (e: Exception) {
+            // 解密失败，返回空的BiliAuthBundle
+            android.util.Log.e("BiliCookieRepository", "加载AuthBundle失败，返回空Bundle", e)
+            BiliAuthBundle()
+        }
     }
 
     companion object {

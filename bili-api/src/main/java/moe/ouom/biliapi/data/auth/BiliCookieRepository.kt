@@ -125,10 +125,10 @@ internal fun evaluateBiliAuthHealth(
 }
 
 class BiliCookieRepository(private val context: Context) {
-    private val encryptedPrefs: SharedPreferences
-    private val _authFlow: MutableStateFlow<BiliAuthBundle>
-    private val _cookieFlow: MutableStateFlow<Map<String, String>>
-    private val _authHealthFlow: MutableStateFlow<SavedCookieAuthHealth>
+    private var encryptedPrefs: SharedPreferences
+    private var _authFlow: MutableStateFlow<BiliAuthBundle>
+    private var _cookieFlow: MutableStateFlow<Map<String, String>>
+    private var _authHealthFlow: MutableStateFlow<SavedCookieAuthHealth>
 
     val cookieFlow: StateFlow<Map<String, String>>
         get() = _cookieFlow.asStateFlow()
@@ -140,19 +140,36 @@ class BiliCookieRepository(private val context: Context) {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
-        encryptedPrefs = EncryptedSharedPreferences.create(
-            context,
-            BILI_AUTH_PREFS,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-        val initialBundle = loadAuthBundle()
-        _authFlow = MutableStateFlow(initialBundle)
-        _cookieFlow = MutableStateFlow(initialBundle.cookies)
-        _authHealthFlow = MutableStateFlow(
-            evaluateBiliAuthHealth(initialBundle)
-        )
+        try {
+            encryptedPrefs = EncryptedSharedPreferences.create(
+                context,
+                BILI_AUTH_PREFS,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+            val initialBundle = loadAuthBundle()
+            _authFlow = MutableStateFlow(initialBundle)
+            _cookieFlow = MutableStateFlow(initialBundle.cookies)
+            _authHealthFlow = MutableStateFlow(
+                evaluateBiliAuthHealth(initialBundle)
+            )
+        } catch (e: Exception) {
+            // 解密失败，创建新的EncryptedSharedPreferences并清除内容
+            encryptedPrefs = EncryptedSharedPreferences.create(
+                context,
+                BILI_AUTH_PREFS,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+            clear()
+            _authFlow = MutableStateFlow(BiliAuthBundle())
+            _cookieFlow = MutableStateFlow(emptyMap())
+            _authHealthFlow = MutableStateFlow(
+                SavedCookieAuthHealth(state = SavedCookieAuthState.Missing)
+            )
+        }
     }
 
     fun getCookiesOnce(): Map<String, String> = _cookieFlow.value
@@ -189,7 +206,11 @@ class BiliCookieRepository(private val context: Context) {
     }
 
     private fun loadAuthBundle(): BiliAuthBundle {
-        val json = encryptedPrefs.getString(KEY_BILI_AUTH_BUNDLE, null) ?: return BiliAuthBundle()
-        return BiliAuthBundle.fromJson(json)
+        return try {
+            val json = encryptedPrefs.getString(KEY_BILI_AUTH_BUNDLE, null) ?: return BiliAuthBundle()
+            BiliAuthBundle.fromJson(json)
+        } catch (e: Exception) {
+            BiliAuthBundle()
+        }
     }
 }
