@@ -1856,7 +1856,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                     val density = LocalDensity.current
                     val itemHeight = 72.dp
                     LazyColumn(state = queueState, modifier = Modifier.weight(1f, fill = false)) {
-                        itemsIndexed(vm.playQueue, key = { _, song -> song.url }) { index, s ->
+                        itemsIndexed(vm.playQueue, key = { _, song -> song.id.ifBlank { song.url } }) { index, s ->
                             val isDragging = draggedSongIndex == index
                             val isSelected = selectedSongs.contains(s.url)
                             
