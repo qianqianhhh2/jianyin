@@ -1969,9 +1969,9 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                                                 val movedItems = (accumulatedForThreshold / threshold).toInt()
                                                                 
                                                                 if (movedItems != 0) {
-                                                                    val selectedUrls = selectedSongs.toList()
-                                                                    val currentIndices = selectedUrls.mapNotNull { url ->
-                                                                        vm.playQueue.indexOfFirst { it.url == url }
+                                                                    val selectedKeys = selectedSongs.toList()
+                                                                    val currentIndices = selectedKeys.mapNotNull { key ->
+                                                                        vm.playQueue.indexOfFirst { (it.id.ifBlank { it.url }) == key }
                                                                     }.sorted()
                                                                     
                                                                     if (currentIndices.isNotEmpty()) {
