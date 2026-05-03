@@ -76,86 +76,68 @@ jianyin/
 ├── app/                                    # 主应用模块
 │   ├── src/main/
 │   │   ├── kotlin/com/qian/jianyin/        # 主代码目录
-│   │   │   ├── MainActivity.kt              # 主 Activity
-│   │   │   ├── MusicViewModel.kt            # 音乐视图模型
-│   │   │   ├── HomeScreenViewModel.kt       # 首页视图模型
-│   │   │   ├── DataModels.kt                # 数据模型
-│   │   │   ├── VersionChecker.kt            # 版本检查器
-│   │   │   ├── VersionUpdateDialog.kt       # 版本更新弹窗
-│   │   │   ├── MyMusicScreenV2.kt           # 我的音乐界面
-│   │   │   ├── HomeScreen.kt                # 主界面
-│   │   │   ├── SearchScreen.kt              # 搜索界面
-│   │   │   ├── MiniPlayer.kt                # 迷你播放器
-│   │   │   ├── MyLibraryScreen.kt           # 我的音乐库
-│   │   │   ├── OnboardingScreen.kt          # 引导页
-│   │   │   ├── BiliWebLoginActivity.kt      # B站登录界面
-│   │   │   ├── MusicPlayerManager.kt        # 播放管理器
-│   │   │   ├── PlaybackService.kt           # 后台服务
-│   │   │   ├── MediaSessionManager.kt       # 会话管理
-│   │   │   ├── PlayerHolder.kt              # 播放器持有者
-│   │   │   ├── PlaybackMode.kt              # 播放模式
-│   │   │   ├── DownloadManager.kt           # 下载管理
-│   │   │   ├── DownloadProgressDialog.kt    # 下载进度弹窗
-│   │   │   ├── DownloadSettingsStore.kt     # 下载设置存储
-│   │   │   ├── DownloadStateManager.kt      # 下载状态管理
-│   │   │   ├── PlaylistDataStore.kt         # 播放列表存储
-│   │   │   ├── PlaylistSyncManager.kt       # 播放列表同步管理
-│   │   │   ├── BiliPlaylistSyncManager.kt   # B站播放列表同步管理
-│   │   │   ├── BackupManager.kt             # 备份管理
-│   │   │   ├── MusicStatsManager.kt         # 统计管理
-│   │   │   ├── LocalMusicManager.kt         # 本地音乐管理
-│   │   │   ├── ImportProgressDialog.kt      # 导入进度弹窗
-│   │   │   ├── ImportStateManager.kt        # 导入状态管理
-│   │   │   ├── SongCustomDataStore.kt       # 歌曲自定义数据存储
-│   │   │   ├── BiliPlayerHelper.kt          # B站播放器助手
-│   │   │   ├── HitokotoManager.kt           # 一言管理
-│   │   │   ├── KeepAliveWorker.kt           # 保活工作器
-│   │   │   ├── PermissionManager.kt         # 权限管理
-│   │   │   ├── PlaylistItemV6.kt            # 播放列表项组件
-│   │   │   └── MaterialUtils.kt             # Material 工具
-│   │   ├── res/                             # 资源文件
-│   │   │   ├── drawable/                    # 图片资源
-│   │   │   ├── drawable-v24/                # 高版本图片资源
-│   │   │   ├── mipmap-anydpi-v26/           # 自适应图标
-│   │   │   ├── mipmap-hdpi/                 # 高密度图标
-│   │   │   ├── mipmap-mdpi/                 # 中密度图标
-│   │   │   ├── mipmap-xhdpi/                # 超高密度图标
-│   │   │   ├── mipmap-xxhdpi/               # 超超高密度图标
-│   │   │   ├── mipmap-xxxhdpi/              # 超超超高密度图标
-│   │   │   ├── values/                      # 默认值
-│   │   │   ├── values-night/                # 夜间模式值
-│   │   │   └── xml/                         # XML 配置文件
-│   │   └── AndroidManifest.xml              # 应用清单文件
-│   ├── build.gradle                         # 模块构建配置
-│   └── proguard-rules.pro                   # 混淆规则
-├── bili-api/                                # Bilibili API 模块
-│   ├── src/main/java/moe/ouom/biliapi/      # Bili API 代码
-│   │   ├── BiliApiHelper.kt                 # Bili API 助手
-│   │   ├── BiliWebLoginHelper.kt            # B站网页登录助手
-│   │   ├── data/auth/                       # 认证数据
-│   │   │   └── BiliCookieRepository.kt      # B站 Cookie 仓库
-│   │   ├── data/platform/                   # 平台数据
-│   │   │   └── BiliAudioSelector.kt         # B站音频选择器
-│   │   └── util/                            # 工具类
-│   │       └── BiliLogger.kt                # B站日志工具
-│   ├── build.gradle.kts                     # 模块构建配置
-│   ├── consumer-rules.pro                   # 消费者规则
-│   └── README.md                            # 模块说明
-├── gradle/                                  # Gradle 配置
-│   ├── wrapper/                             # Gradle 包装器
-│   │   ├── gradle-wrapper.jar              # Gradle 包装器 JAR
-│   │   └── gradle-wrapper.properties       # Gradle 包装器配置
-│   └── libs.versions.toml                   # 依赖版本管理
-├── images/                                  # 图片资源
-│   └── logo.png                             # 应用 Logo
-├── .gitignore                               # Git 忽略文件
-├── LICENSE                                  # GPL 3.0 许可证
-├── README.md                                # 项目说明
-├── build.gradle                             # 根构建配置
-├── gradle.properties                        # Gradle 属性
-├── gradlew                                  # Gradle 执行脚本（Linux/Mac）
-├── gradlew.bat                              # Gradle 执行脚本（Windows）
-└── settings.gradle                          # 项目设置
+│   │   │   ├── bili/                       # B站相关
+│   │   │   │   ├── BiliPlayerHelper.kt     # B站播放器助手
+│   │   │   │   └── LocalMusicManager.kt    # 本地音乐管理
+│   │   │   ├── data/                       # 数据层
+│   │   │   │   ├── local/                  # 本地存储
+│   │   │   │   │   ├── DownloadSettingsStore.kt
+│   │   │   │   │   ├── PlaylistDataStore.kt
+│   │   │   │   │   └── SongCustomDataStore.kt
+│   │   │   │   └── model/                  # 数据模型
+│   │   │   │       ├── DataModels.kt
+│   │   │   │       └── PlaylistItemV6.kt
+│   │   │   ├── download/                   # 下载模块
+│   │   │   │   ├── DownloadManager.kt
+│   │   │   │   ├── DownloadProgressDialog.kt
+│   │   │   │   ├── DownloadStateManager.kt
+│   │   │   │   ├── ImportProgressDialog.kt
+│   │   │   │   └── ImportStateManager.kt
+│   │   │   ├── misc/                       # 杂项
+│   │   │   │   ├── BackupManager.kt
+│   │   │   │   └── MusicStatsManager.kt
+│   │   │   ├── playback/                   # 播放模块
+│   │   │   │   ├── MediaSessionManager.kt
+│   │   │   │   ├── MusicPlayerManager.kt
+│   │   │   │   ├── PlaybackMode.kt
+│   │   │   │   ├── PlaybackService.kt
+│   │   │   │   └── PlayerHolder.kt
+│   │   │   ├── sync/                       # 同步模块
+│   │   │   │   ├── BiliPlaylistSyncManager.kt
+│   │   │   │   └── PlaylistSyncManager.kt
+│   │   │   ├── ui/                         # UI 层
+│   │   │   │   ├── BiliWebLoginActivity.kt
+│   │   │   │   ├── HomeScreen.kt
+│   │   │   │   ├── MainActivity.kt
+│   │   │   │   ├── MiniPlayer.kt
+│   │   │   │   ├── MyLibraryScreen.kt
+│   │   │   │   ├── MyMusicScreenV2.kt
+│   │   │   │   ├── OnboardingScreen.kt
+│   │   │   │   └── SearchScreen.kt
+│   │   │   ├── utils/                      # 工具类
+│   │   │   │   ├── HitokotoManager.kt
+│   │   │   │   ├── MaterialUtils.kt
+│   │   │   │   └── PermissionManager.kt
+│   │   │   ├── viewmodel/                  # 视图模型
+│   │   │   │   ├── HomeScreenViewModel.kt
+│   │   │   │   └── MusicViewModel.kt
+│   │   │   └── worker/                     # 后台任务
+│   │   │       ├── KeepAliveWorker.kt
+│   │   │       ├── VersionChecker.kt
+│   │   │       └── VersionUpdateDialog.kt
+│   │   ├── res/                            # 资源文件
+│   │   └── AndroidManifest.xml             # 应用清单文件
+│   └── build.gradle
+├── bili-api/                               # Bilibili API 模块
+│   └── src/main/java/moe/ouom/biliapi/
+│       ├── BiliApiHelper.kt                # Bili API 助手
+│       ├── BiliWebLoginHelper.kt           # B站网页登录助手
+│       ├── data/auth/BiliCookieRepository.kt
+│       ├── data/platform/BiliAudioSelector.kt
+│       └── util/BiliLogger.kt
+├── gradle/                                 # Gradle 配置
+├── images/                                 # 图片资源
+└── ...
 ```
 
 ## 快速开始
