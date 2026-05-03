@@ -5,6 +5,16 @@ import retrofit2.http.Query
 import retrofit2.http.Url
 
 /**
+ * 歌曲类型枚举
+ */
+enum class SongSource {
+    NETEASE,  // 网易云
+    QQ,       // QQ音乐
+    BILI,     // B站视频
+    LOCAL     // 本地文件
+}
+
+/**
  * 歌曲数据类
  * 用于存储歌曲的基本信息
  * @property id 歌曲ID
@@ -13,6 +23,7 @@ import retrofit2.http.Url
  * @property url 歌曲播放地址
  * @property pic 歌曲封面地址
  * @property lrc 歌词内容
+ * @property source 歌曲来源
  */
 data class Song(
     val id: String = "",
@@ -21,11 +32,23 @@ data class Song(
     val url: String = "",
     val pic: String = "",
     val lrc: String? = null,
-    val isLocal: Boolean = false, // 是否为本地歌曲
-    val isBiliVideo: Boolean = false, // 是否为B站视频
-    val bvid: String = "", // B站视频ID
-    val cid: Long = 0 // B站视频的cid
-)
+    val source: SongSource = SongSource.NETEASE,
+    val isLocal: Boolean = false,
+    val isBiliVideo: Boolean = false,
+    val bvid: String = "",
+    val cid: Long = 0
+) {
+    companion object {
+        fun detectSource(song: Song): SongSource {
+            return when {
+                song.isLocal -> SongSource.LOCAL
+                song.isBiliVideo || song.bvid.isNotBlank() -> SongSource.BILI
+                song.id.isNotBlank() && song.url.isNotBlank() -> SongSource.NETEASE
+                else -> SongSource.NETEASE
+            }
+        }
+    }
+}
 
 /**
  * 歌词行数据类

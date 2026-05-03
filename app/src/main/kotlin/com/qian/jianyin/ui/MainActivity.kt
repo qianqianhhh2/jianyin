@@ -14,13 +14,20 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -45,6 +52,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -71,6 +79,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import com.qian.jianyin.ProgressBarStyle
+import com.qian.jianyin.PlaylistQueueItem
+import com.qian.jianyin.PlaylistDataStore
+import com.qian.jianyin.UserSyncedPlaylist
+import com.qian.jianyin.PlaylistSyncManager
+import com.qian.jianyin.HomePlaylistInfo
 import kotlin.math.cos
 import kotlin.math.sin
 import androidx.lifecycle.Lifecycle
@@ -78,6 +91,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.activity.compose.BackHandler
 import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.Log
 import android.app.Activity
 import android.view.Window
@@ -97,6 +113,8 @@ import com.qian.jianyin.PermissionCheck
 import com.qian.jianyin.VersionChecker
 import com.qian.jianyin.VersionUpdate
 import com.qian.jianyin.VersionUpdateDialog
+import com.qian.jianyin.DownloadSettingsStore
+import androidx.compose.runtime.collectAsState
 import moe.ouom.biliapi.BiliWebLoginHelper
 import androidx.media3.common.util.UnstableApi
 import dev.chrisbanes.haze.ExperimentalHazeApi
@@ -271,6 +289,8 @@ class MainActivity : ComponentActivity() {
         
         setContent {
             val context = LocalContext.current
+            DownloadSettingsStore.initDarkMode(context)
+            DownloadSettingsStore.initFadeEnabled(context)
             val onboardingManager = remember { OnboardingManager(context) }
             val isFirstLaunch = remember { mutableStateOf(onboardingManager.isFirstLaunch()) }
             
@@ -278,7 +298,13 @@ class MainActivity : ComponentActivity() {
             val showVersionUpdateDialog = remember { mutableStateOf(false) }
             val versionUpdate = remember { mutableStateOf<VersionUpdate?>(null) }
             
-            val darkTheme = isSystemInDarkTheme()
+            val darkModeSetting by DownloadSettingsStore.darkModeFlow.collectAsState()
+            val darkTheme = when (darkModeSetting) {
+                0 -> isSystemInDarkTheme()
+                1 -> false
+                2 -> true
+                else -> isSystemInDarkTheme()
+            }
             val colorScheme = if (darkTheme) darkColorScheme(
                 primary = Color(0xFFA7C2F7),
                 primaryContainer = Color(0xFF004187),
@@ -346,7 +372,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     
-                    MainScreenFramework(vm)
+                    MainScreenFramework(vm, darkTheme)
                     
                     // 版本更新弹窗
                     VersionUpdateDialog(
@@ -629,13 +655,26 @@ fun RadioButtonRow(text: String, selected: Boolean, onSelect: () -> Unit) {
  */
 @OptIn(androidx.compose.animation.ExperimentalAnimationApi::class)
 @Composable
-fun MainScreenFramework(vm: MusicViewModel = viewModel()) {
+fun MainScreenFramework(vm: MusicViewModel = viewModel(), isDarkMode: Boolean = false) {
     var selectedItem by remember { mutableIntStateOf(0) }
-    var refreshPlaylistTrigger by remember { mutableStateOf(0) }
+    var refreshPlaylistTrigger by remember { mutableIntStateOf(0) }
+    var lastBackPressTime by remember { mutableLongStateOf(0L) }
+    val context = LocalContext.current
     
     // 添加返回键处理
     BackHandler(vm.isPlayerSheetVisible.value) {
         vm.isPlayerSheetVisible.value = false
+    }
+    
+    // 全局返回键两次退出
+    BackHandler(enabled = !vm.isPlayerSheetVisible.value) {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastBackPressTime < 1000) {
+            (context as? Activity)?.finishAffinity()
+        } else {
+            lastBackPressTime = currentTime
+            Toast.makeText(context, "再按一次退出应用", Toast.LENGTH_SHORT).show()
+        }
     }
     
     val navItems = listOf(
@@ -733,8 +772,8 @@ fun MainScreenFramework(vm: MusicViewModel = viewModel()) {
             ) {
                 when (it) {
                     // 关键：把 innerPadding 传给子页面
-                    0 -> HomeScreen(vm, innerPadding)
-                    1 -> SearchScreen(vm, innerPadding)
+                    0 -> HomeScreen(vm, innerPadding, isDarkMode)
+                    1 -> SearchScreen(vm, innerPadding, isDarkMode)
                     2 -> MyMusicScreenV2(vm, innerPadding, refreshPlaylistTrigger)
                 }
             }
@@ -1022,7 +1061,10 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                 ) {
                     // 播放模式聚合按钮（顺序/随机/单曲循环）
                     IconButton(
-                        onClick = { vm.togglePlayMode() },
+                        onClick = {
+                            vm.togglePlayMode()
+                            Toast.makeText(context, vm.playMode.value.label, Toast.LENGTH_SHORT).show()
+                        },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -1479,6 +1521,19 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
     
     val queueState = rememberLazyListState()
     val currentSong = vm.currentSong.value
+    var isPlaylistReorderMode by remember { mutableStateOf(false) }
+    var isSongReorderMode by remember { mutableStateOf(false) }
+    var draggedSongIndex by remember { mutableIntStateOf(-1) }
+    var originalDraggedIndex by remember { mutableIntStateOf(-1) }
+    var accumulatedDragOffsetY by remember { mutableFloatStateOf(0f) }
+    var accumulatedForThreshold by remember { mutableFloatStateOf(0f) }
+    var pendingDragSongIndex by remember { mutableIntStateOf(-1) }
+    var showAddPlaylistDialog by remember { mutableStateOf(false) }
+    var isSelectionMode by remember { mutableStateOf(false) }
+    var selectedSongs by remember { mutableStateOf(setOf<String>()) }
+    var showAddToPlaylistDialog by remember { mutableStateOf(false) }
+    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+    var createPlaylistName by remember { mutableStateOf("") }
     
     LaunchedEffect(currentSong, showQueue) {
         if (showQueue && currentSong != null) {
@@ -1489,7 +1544,132 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
         }
     }
     
-    // 使用Box和动画效果替代ModalBottomSheet
+    if (showAddPlaylistDialog) {
+        AddPlaylistToQueueDialog(
+            vm = vm,
+            onDismiss = { showAddPlaylistDialog = false },
+            onPlaylistSelected = { playlist ->
+                vm.addPlaylistToQueue(playlist)
+                showAddPlaylistDialog = false
+            }
+        )
+    }
+
+    if (showAddToPlaylistDialog) {
+        val otherPlaylists = PlaylistDataStore.getAll(context).filter {
+            !it.id.startsWith("local_") || it.isLocalPlaylist
+        }
+        AlertDialog(
+            onDismissRequest = { showAddToPlaylistDialog = false },
+            title = { Text("添加到歌单") },
+            text = {
+                Column {
+                    if (otherPlaylists.isEmpty()) {
+                        Text("没有其他歌单可添加", modifier = Modifier.padding(vertical = 16.dp))
+                    } else {
+                        otherPlaylists.take(5).forEach { targetPlaylist ->
+                            ListItem(
+                                headlineContent = { Text(targetPlaylist.name) },
+                                supportingContent = { Text("${targetPlaylist.songs.size} 首歌曲") },
+                                leadingContent = {
+                                    AsyncImage(
+                                        model = targetPlaylist.coverPic,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                },
+                                modifier = Modifier.clickable {
+                                    val songsToAdd = selectedSongs.mapNotNull { url ->
+                                        vm.playQueue.find { it.url == url }
+                                    }
+                                    var addedCount = 0
+                                    songsToAdd.forEach { s ->
+                                        if (PlaylistDataStore.addSongToPlaylist(context, targetPlaylist.id, s)) {
+                                            addedCount++
+                                        }
+                                    }
+                                    showAddToPlaylistDialog = false
+                                    isSelectionMode = false
+                                    selectedSongs = emptySet()
+                                    Toast.makeText(context, "已添加 $addedCount 首歌曲到 ${targetPlaylist.name}", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    ListItem(
+                        headlineContent = { Text("创建新歌单", color = MaterialTheme.colorScheme.primary) },
+                        leadingContent = {
+                            Icon(Icons.Default.Add, null, tint = MaterialTheme.colorScheme.primary)
+                        },
+                        modifier = Modifier.clickable {
+                            showAddToPlaylistDialog = false
+                            createPlaylistName = ""
+                            showCreatePlaylistDialog = true
+                        }
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAddToPlaylistDialog = false }) {
+                    Text("取消")
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    }
+
+    if (showCreatePlaylistDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreatePlaylistDialog = false },
+            title = { Text("创建新歌单") },
+            text = {
+                OutlinedTextField(
+                    value = createPlaylistName,
+                    onValueChange = { createPlaylistName = it },
+                    label = { Text("歌单名称") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (createPlaylistName.isNotBlank()) {
+                            val newPlaylist = PlaylistDataStore.createPlaylist(context, createPlaylistName.trim())
+                            val songsToAdd = selectedSongs.mapNotNull { url ->
+                                vm.playQueue.find { it.url == url }
+                            }
+                            var addedCount = 0
+                            songsToAdd.forEach { s ->
+                                if (PlaylistDataStore.addSongToPlaylist(context, newPlaylist.id, s)) {
+                                    addedCount++
+                                }
+                            }
+                            showCreatePlaylistDialog = false
+                            isSelectionMode = false
+                            selectedSongs = emptySet()
+                            Toast.makeText(context, "已创建歌单并添加 $addedCount 首歌曲", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = createPlaylistName.isNotBlank()
+                ) {
+                    Text("创建并添加")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreatePlaylistDialog = false }) {
+                    Text("取消")
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    }
+    
     AnimatedVisibility(
         visible = showQueue,
         enter = slideInVertically(
@@ -1515,7 +1695,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .heightIn(max = 400.dp)
+                    .heightIn(max = 500.dp)
                     .background(MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                     .padding(16.dp)
                     .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { }
@@ -1526,38 +1706,322 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("播放列表", color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            "${vm.playQueue.size} 首",
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            fontSize = 14.sp
-                        )
+                        if (isSelectionMode || (isSongReorderMode && selectedSongs.isNotEmpty())) {
+                            IconButton(onClick = {
+                                isSelectionMode = false
+                                selectedSongs = emptySet()
+                            }) {
+                                Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.primary)
+                            }
+                            Text("已选择 ${selectedSongs.size} 首", color = MaterialTheme.colorScheme.onSurface, fontSize = 18.sp)
+                        } else {
+                            Text("播放列表", color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isSelectionMode || (isSongReorderMode && selectedSongs.isNotEmpty())) {
+                                IconButton(onClick = { showAddToPlaylistDialog = true }) {
+                                    Icon(Icons.Default.PlaylistAdd, null, tint = MaterialTheme.colorScheme.primary)
+                                }
+                            } else if (isPlaylistReorderMode) {
+                                TextButton(onClick = { isPlaylistReorderMode = false }) {
+                                    Text("完成", color = MaterialTheme.colorScheme.primary)
+                                }
+                            } else if (isSongReorderMode) {
+                                TextButton(onClick = { isSongReorderMode = false }) {
+                                    Text("完成", color = MaterialTheme.colorScheme.primary)
+                                }
+                            } else {
+                                if (vm.playlistQueue.isNotEmpty()) {
+                                    TextButton(onClick = { isPlaylistReorderMode = true }) {
+                                        Text("歌单排序", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                IconButton(onClick = { showAddPlaylistDialog = true }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "添加歌单",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
                     }
-                    LazyColumn(state = queueState) {
-                        itemsIndexed(vm.playQueue) { index, s ->
+                    
+                    if (vm.playlistQueue.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            vm.playlistQueue.forEachIndexed { idx, playlist ->
+                                val isCurrentPlaylist = idx == vm.currentPlaylistIndex.intValue
+                                Box(
+                                    modifier = Modifier
+                                        .then(
+                                            if (isPlaylistReorderMode) {
+                                                Modifier.padding(horizontal = 4.dp)
+                                            } else {
+                                                Modifier.clickable {
+                                                    if (!isCurrentPlaylist) {
+                                                        vm.playPlaylist(playlist)
+                                                    }
+                                                }
+                                            }
+                                        )
+                                        .background(
+                                            if (isCurrentPlaylist) MaterialTheme.colorScheme.primaryContainer
+                                            else MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp),
+                                            shape = RoundedCornerShape(12.dp)
+                                        )
+                                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (isPlaylistReorderMode) {
+                                            IconButton(
+                                                onClick = {
+                                                    if (idx > 0) {
+                                                        vm.movePlaylistQueueItem(idx, idx - 1)
+                                                    }
+                                                },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.KeyboardArrowUp,
+                                                    contentDescription = "上移",
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
+                                        AsyncImage(
+                                            model = playlist.coverPic,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .clip(RoundedCornerShape(6.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(
+                                                text = playlist.name,
+                                                color = if (isCurrentPlaylist) MaterialTheme.colorScheme.onPrimaryContainer
+                                                       else MaterialTheme.colorScheme.onSurface,
+                                                fontSize = 13.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "${playlist.songs.size} 首",
+                                                color = if (isCurrentPlaylist) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                        if (isPlaylistReorderMode) {
+                                            IconButton(
+                                                onClick = {
+                                                    if (idx < vm.playlistQueue.size - 1) {
+                                                        vm.movePlaylistQueueItem(idx, idx + 1)
+                                                    }
+                                                },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.KeyboardArrowDown,
+                                                    contentDescription = "下移",
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Divider(color = MaterialTheme.colorScheme.onSurface.copy(0.2f))
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    
+                    Text(
+                        "${vm.playQueue.size} 首",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    
+                    val context = LocalContext.current
+                    val density = LocalDensity.current
+                    val itemHeight = 72.dp
+                    LazyColumn(state = queueState, modifier = Modifier.weight(1f, fill = false)) {
+                        itemsIndexed(vm.playQueue, key = { _, song -> song.url }) { index, s ->
+                            val isDragging = draggedSongIndex == index
+                            val isSelected = selectedSongs.contains(s.url)
+                            
+                            // 微小的弹簧缩放动画
+                            val scale by animateFloatAsState(
+                                targetValue = if (isDragging) 1.02f else 1f,
+                                animationSpec = spring(
+                                    dampingRatio = 0.6f,
+                                    stiffness = 400f
+                                ),
+                                label = "dragScale"
+                            )
+                            
                             Column {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp)
+                                        .graphicsLayer {
+                                            scaleX = scale
+                                            scaleY = scale
+                                        }
+                                        .background(
+                                            if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                            else if (isDragging) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                            else Color.Transparent,
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .then(
+                                            if (isSelectionMode) Modifier else Modifier.pointerInput(Unit) {
+                                                detectTapGestures(
+                                                    onTap = {
+                                                        if (isSelectionMode) {
+                                                            selectedSongs = if (selectedSongs.contains(s.url)) selectedSongs - s.url else selectedSongs + s.url
+                                                        } else {
+                                                            vm.playSong(s)
+                                                        }
+                                                    },
+                                                    onLongPress = {
+                                                        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                                            val vibratorManager = context.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                                                            vibratorManager.defaultVibrator
+                                                        } else {
+                                                            @Suppress("DEPRECATION")
+                                                            context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as Vibrator
+                                                        }
+                                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                            vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+                                                        } else {
+                                                            @Suppress("DEPRECATION")
+                                                            vibrator.vibrate(50)
+                                                        }
+                                                        if (!isSelectionMode) {
+                                                            isSelectionMode = true
+                                                            selectedSongs = setOf(s.url)
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                        ),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                        // 显示排名序号
-                                        Text(
-                                            "${index + 1}",
-                                            color = if (s == currentSong) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontSize = 14.sp,
-                                            modifier = Modifier.padding(start = 8.dp, end = 8.dp)
-                                        )
+                                        if (isSelectionMode) {
+                                            Icon(
+                                                imageVector = Icons.Default.DragHandle,
+                                                contentDescription = "拖动",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier
+                                                    .size(24.dp)
+                                                    .padding(end = 8.dp)
+                                                    .pointerInput(Unit) {
+                                                        detectDragGesturesAfterLongPress(
+                                                            onDragStart = { offset ->
+                                                                val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                                                    val vibratorManager = context.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                                                                    vibratorManager.defaultVibrator
+                                                                } else {
+                                                                    @Suppress("DEPRECATION")
+                                                                    context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as Vibrator
+                                                                }
+                                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                                    vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+                                                                } else {
+                                                                    @Suppress("DEPRECATION")
+                                                                    vibrator.vibrate(50)
+                                                                }
+                                                                draggedSongIndex = index
+                                                                originalDraggedIndex = index
+                                                                accumulatedForThreshold = 0f
+                                                            },
+                                                            onDragEnd = {
+                                                                draggedSongIndex = -1
+                                                                originalDraggedIndex = -1
+                                                                accumulatedForThreshold = 0f
+                                                            },
+                                                            onDragCancel = {
+                                                                draggedSongIndex = -1
+                                                                originalDraggedIndex = -1
+                                                                accumulatedForThreshold = 0f
+                                                            },
+                                                            onDrag = { change, dragAmount ->
+                                                                change.consume()
+                                                                accumulatedForThreshold += dragAmount.y
+                                                                val itemHeightPx = with(density) { itemHeight.toPx() }
+                                                                val threshold = itemHeightPx * 0.5f
+                                                                
+                                                                val movedItems = (accumulatedForThreshold / threshold).toInt()
+                                                                
+                                                                if (movedItems != 0) {
+                                                                    val selectedUrls = selectedSongs.toList()
+                                                                    val currentIndices = selectedUrls.mapNotNull { url ->
+                                                                        vm.playQueue.indexOfFirst { it.url == url }
+                                                                    }.sorted()
+                                                                    
+                                                                    if (currentIndices.isNotEmpty()) {
+                                                                        val minSelected = currentIndices.first()
+                                                                        val maxSelected = currentIndices.last()
+                                                                        val rangeSize = currentIndices.size
+                                                                        
+                                                                        val targetStartIndex = (minSelected + movedItems)
+                                                                            .coerceIn(0, vm.playQueue.size - rangeSize)
+                                                                        
+                                                                        if (targetStartIndex != minSelected) {
+                                                                            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                                                                val vibratorManager = context.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                                                                                vibratorManager.defaultVibrator
+                                                                            } else {
+                                                                                @Suppress("DEPRECATION")
+                                                                                context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as Vibrator
+                                                                            }
+                                                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                                                vibrator.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE))
+                                                                            } else {
+                                                                                @Suppress("DEPRECATION")
+                                                                                vibrator.vibrate(20)
+                                                                            }
+                                                                            
+                                                                            vm.moveQueueItems(currentIndices, targetStartIndex)
+                                                                            
+                                                                            draggedSongIndex = targetStartIndex + (index - minSelected)
+                                                                            accumulatedForThreshold = 0f
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        )
+                                                    }
+                                            )
+                                        } else {
+                                            Text(
+                                                "${index + 1}",
+                                                color = if (s == currentSong) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontSize = 14.sp,
+                                                modifier = Modifier.padding(start = 8.dp, end = 8.dp)
+                                            )
+                                        }
                                         
-                                        // 为当前播放的歌曲添加音频律动效果
-                                        if (s == currentSong) {
+                                        if (s == currentSong && !isSelectionMode) {
                                             Box(modifier = Modifier
                                                 .width(32.dp)
                                                 .height(24.dp)
                                                 .padding(4.dp)
                                             ) {
-                                                // 三条垂直圆柱，模拟音频律动
                                                 Row(
                                                     modifier = Modifier.fillMaxSize(),
                                                     horizontalArrangement = Arrangement.SpaceEvenly,
@@ -1590,7 +2054,6 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                                         )
                                                     )
                                                     
-                                                    // 根据播放状态控制显示
                                                     val displayHeight1 = if (vm.isPlaying.value) height1 else 0.1f
                                                     val displayHeight2 = if (vm.isPlaying.value) height2 else 0.1f
                                                     val displayHeight3 = if (vm.isPlaying.value) height3 else 0.1f
@@ -1618,57 +2081,58 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                                     )
                                                 }
                                             }
-                                        } else {
-                                            // 非当前播放歌曲的占位空间
+                                        } else if (!isSelectionMode) {
                                             Spacer(modifier = Modifier.width(32.dp))
                                         }
                                         
-                                        // 显示歌曲封面
                                         AsyncImage(
-                                            model = s.pic, 
-                                            contentDescription = null, 
+                                            model = s.pic,
+                                            contentDescription = null,
                                             modifier = Modifier
                                                 .size(48.dp)
                                                 .clip(RoundedCornerShape(8.dp))
                                                 .background(
-                                                    if (isSystemInDarkTheme()) 
+                                                    if (isSystemInDarkTheme())
                                                         Color(0xFF4A5568)
-                                                    else 
+                                                    else
                                                         Color(0xFFFFFEFE)
-                                                ), 
+                                                )
+                                                .then(if (isSelectionMode) Modifier.clickable { selectedSongs = if (selectedSongs.contains(s.url)) selectedSongs - s.url else selectedSongs + s.url } else Modifier),
                                             contentScale = ContentScale.Crop
                                         )
                                         
-                                        Column(modifier = Modifier.clickable { vm.playSong(s) }.padding(start = 16.dp, top = 12.dp, end = 12.dp, bottom = 12.dp)) {
+                                        Column(modifier = Modifier
+                                            .padding(start = 16.dp, top = 12.dp, end = 12.dp, bottom = 12.dp)
+                                            .then(if (isSelectionMode) Modifier.clickable { selectedSongs = if (selectedSongs.contains(s.url)) selectedSongs - s.url else selectedSongs + s.url } else Modifier)) {
                                             Text(
                                                 s.name,
-                                                color = if (s == currentSong) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                                color = if (s == currentSong && !isSelectionMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                                 fontSize = 16.sp,
                                                 maxLines = 1
                                             )
                                             Text(
                                                 s.artist,
-                                                color = if (s == currentSong) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                color = if (s == currentSong && !isSelectionMode) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant,
                                                 fontSize = 13.sp,
                                                 maxLines = 1
                                             )
                                         }
                                     }
-                                    // 移除按钮
-                                    IconButton(
-                                        onClick = { vm.removeFromQueue(s) },
-                                        modifier = Modifier
-                                            .size(24.dp)
-                                            .padding(end = 8.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "移除",
-                                            tint = MaterialTheme.colorScheme.onSurface
-                                        )
+                                    if (!isSongReorderMode) {
+                                        IconButton(
+                                            onClick = { vm.removeFromQueue(s) },
+                                            modifier = Modifier
+                                                .size(24.dp)
+                                                .padding(end = 8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "移除",
+                                                tint = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
                                     }
                                 }
-                                // 添加分割线，除了最后一首歌曲
                                 if (index < vm.playQueue.size - 1) {
                                     Divider(
                                         modifier = Modifier.fillMaxWidth(),
@@ -1769,4 +2233,182 @@ fun formatTime(ms: Long): String {
     val min = totalSec / 60
     val sec = totalSec % 60
     return "%02d:%02d".format(min, sec)
+}
+
+@Composable
+fun AddPlaylistToQueueDialog(
+    vm: MusicViewModel,
+    onDismiss: () -> Unit,
+    onPlaylistSelected: (PlaylistQueueItem) -> Unit
+) {
+    val context = LocalContext.current
+    var userPlaylists by remember { mutableStateOf<List<UserSyncedPlaylist>>(emptyList()) }
+    var homePlaylists by remember { mutableStateOf<List<HomePlaylistInfo>>(emptyList()) }
+    var selectedTab by remember { mutableIntStateOf(0) }
+    var isLoading by remember { mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
+    
+    LaunchedEffect(Unit) {
+        isLoading = true
+        userPlaylists = PlaylistDataStore.getAll(context)
+        homePlaylists = PlaylistSyncManager.getAllHomePlaylists()
+        isLoading = false
+    }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("添加到播放队列") },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (isLoading) {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else {
+                    TabRow(selectedTabIndex = selectedTab) {
+                        Tab(
+                            selected = selectedTab == 0,
+                            onClick = { selectedTab = 0 },
+                            text = { Text("我的歌单") }
+                        )
+                        Tab(
+                            selected = selectedTab == 1,
+                            onClick = { selectedTab = 1 },
+                            text = { Text("推荐歌单") }
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    when (selectedTab) {
+                        0 -> {
+                            if (userPlaylists.isEmpty()) {
+                                Text(
+                                    "暂无歌单",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 32.dp)
+                                )
+                            } else {
+                                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                                    items(userPlaylists) { playlist ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    onPlaylistSelected(
+                                                        PlaylistQueueItem(
+                                                            id = playlist.id,
+                                                            name = playlist.name,
+                                                            coverPic = playlist.coverPic,
+                                                            songs = playlist.songs
+                                                        )
+                                                    )
+                                                }
+                                                .padding(vertical = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            AsyncImage(
+                                                model = playlist.coverPic,
+                                                contentDescription = null,
+                                                modifier = Modifier
+                                                    .size(48.dp)
+                                                    .clip(RoundedCornerShape(8.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = playlist.name,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    fontSize = 15.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = "${playlist.songs.size} 首",
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    fontSize = 12.sp
+                                                )
+                                            }
+                                            Icon(
+                                                imageVector = Icons.Default.Add,
+                                                contentDescription = "添加",
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                        Divider(color = MaterialTheme.colorScheme.onSurface.copy(0.1f))
+                                    }
+                                }
+                            }
+                        }
+                        1 -> {
+                            LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                                items(homePlaylists) { playlist ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                scope.launch {
+                                                    val songs = PlaylistSyncManager.fetchPlaylist(playlist.playlistId, context)
+                                                    if (!songs.isNullOrEmpty()) {
+                                                        onPlaylistSelected(
+                                                            PlaylistQueueItem(
+                                                                id = playlist.playlistId,
+                                                                name = playlist.name,
+                                                                coverPic = playlist.coverUrl,
+                                                                songs = songs
+                                                            )
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            .padding(vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        AsyncImage(
+                                            model = playlist.coverUrl,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(RoundedCornerShape(8.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = playlist.name,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                fontSize = 15.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = playlist.subTitle,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontSize = 12.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "添加",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    Divider(color = MaterialTheme.colorScheme.onSurface.copy(0.1f))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.surface
+    )
 }

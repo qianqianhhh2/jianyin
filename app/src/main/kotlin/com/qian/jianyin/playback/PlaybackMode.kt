@@ -1,6 +1,7 @@
 package com.qian.jianyin
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
@@ -16,7 +17,9 @@ enum class PlaybackMode(val label: String) {
     /** 随机播放模式 */
     RANDOM("随机播放"),
     /** 单曲循环模式 */
-    SINGLE("单曲循环");
+    SINGLE("单曲循环"),
+    /** 持续播放模式 - 播完当前歌单后按顺序播放下一个歌单，播完所有歌单后停止 */
+    CONTINUOUS("持续播放");
 
     /**
      * 获取对应播放模式的图标
@@ -27,6 +30,7 @@ enum class PlaybackMode(val label: String) {
             SEQUENCE -> Icons.Default.Repeat
             RANDOM -> Icons.Default.Shuffle
             SINGLE -> Icons.Default.RepeatOne
+            CONTINUOUS -> Icons.Default.PlaylistPlay
         }
     }
 

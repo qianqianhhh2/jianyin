@@ -2,6 +2,9 @@ package com.qian.jianyin
 
 import android.content.Context
 import android.os.Environment
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * 下载设置存储类
@@ -14,6 +17,18 @@ object DownloadSettingsStore {
     private const val KEY_DOWNLOAD_QUALITY = "download_quality"
     private const val KEY_PLAY_QUALITY = "play_quality"
     private const val KEY_LYRIC_SOURCE = "lyric_source" // 0: 内嵌, 1: 网络
+    private const val KEY_DARK_MODE = "dark_mode" // 0: 跟随系统, 1: 浅色, 2: 深色
+    private const val KEY_FADE_ENABLED = "fade_enabled"
+
+    private val _darkModeFlow = MutableStateFlow(0)
+    val darkModeFlow: StateFlow<Int> = _darkModeFlow.asStateFlow()
+
+    private val _fadeEnabledFlow = MutableStateFlow(false)
+    val fadeEnabledFlow: StateFlow<Boolean> = _fadeEnabledFlow.asStateFlow()
+
+    fun initDarkMode(context: Context) {
+        _darkModeFlow.value = getDarkMode(context)
+    }
     
     /**
      * 获取当前下载路径
@@ -137,5 +152,33 @@ object DownloadSettingsStore {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putInt(KEY_LYRIC_SOURCE, source)
             .commit()
+    }
+
+    fun getDarkMode(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_DARK_MODE, 0)
+    }
+
+    fun setDarkMode(context: Context, mode: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_DARK_MODE, mode)
+            .apply()
+        _darkModeFlow.value = mode
+    }
+
+    fun isFadeEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_FADE_ENABLED, false)
+    }
+
+    fun setFadeEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_FADE_ENABLED, enabled)
+            .apply()
+        _fadeEnabledFlow.value = enabled
+    }
+
+    fun initFadeEnabled(context: Context) {
+        _fadeEnabledFlow.value = isFadeEnabled(context)
     }
 }

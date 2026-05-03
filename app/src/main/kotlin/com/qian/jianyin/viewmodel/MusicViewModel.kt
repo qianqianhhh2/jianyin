@@ -28,6 +28,14 @@ import moe.ouom.biliapi.BiliWebLoginHelper
 import moe.ouom.biliapi.BiliAudioStreamInfo
 import moe.ouom.biliapi.SavedCookieAuthState
 
+// 歌单队列项数据类
+data class PlaylistQueueItem(
+    val id: String,
+    val name: String,
+    val coverPic: String,
+    val songs: List<Song>
+)
+
 // 进度条样式枚举
 enum class ProgressBarStyle {
     DEFAULT,          // 默认样式
@@ -72,6 +80,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val currentPlayingList = mutableStateListOf<Song>()   // 当前播放歌曲的来源列表
     val currentPlayingListIndex = mutableIntStateOf(-1)    // 当前歌曲在来源列表中的索引
     
+    // 歌单队列（用于持续播放模式）
+    val playlistQueue = mutableStateListOf<PlaylistQueueItem>()  // 歌单队列
+    var currentPlaylistIndex = mutableIntStateOf(-1)              // 当前播放的歌单索引
+    
     // 歌单更新触发器，用于通知 UI 刷新歌单列表
     val playlistUpdateTrigger = mutableIntStateOf(0)
 
@@ -98,6 +110,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("music_prefs", Context.MODE_PRIVATE)
     private val gson = Gson()
     private var progressJob: Job? = null
+    private var fadeJob: Job? = null
 
     private val retrofit = Retrofit.Builder()
         .baseUrl("https://api.qijieya.cn/")
@@ -186,12 +199,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         totalDuration.longValue = duration
 
                         currentSong.value?.let { song ->
+                            val context = getApplication<Application>()
+                            val localCoverPath = if (song.isLocal) null else DownloadManager.getLocalCoverPath(context, song)
                             mediaSessionManager.updateMetadata(
                                 title = song.name,
                                 artist = song.artist,
                                 album = "专辑",
                                 duration = duration,
-                                artworkUrl = song.pic
+                                artworkUrl = localCoverPath ?: song.pic
                             )
                         }
 
@@ -569,6 +584,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             player.setMediaItem(mediaItem)
                             player.prepare()
                             player.play()
+                            applyFadeIn()
                         }
                         
                         // 更新播放状态
@@ -603,6 +619,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                                     player.setMediaItem(mediaItem)
                                     player.prepare()
                                     player.play()
+                                    applyFadeIn()
                                 }
                                 
                                 // 更新播放状态
@@ -644,7 +661,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 
                 val mediaItem = MediaItem.Builder()
-                    .setUri(if (song.isLocal && localSongPath != null) Uri.fromFile(File(localSongPath)) else Uri.parse(finalUrl))
+                    .setUri(if (localSongPath != null) Uri.fromFile(File(localSongPath)) else Uri.parse(finalUrl))
                     .setMediaMetadata(mediaMetadata)
                     .build()
 
@@ -653,6 +670,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 player.play()
                 
                 isPlaying.value = true
+                applyFadeIn()
                 
                 //更新媒体会话
                 mediaSessionManager.updateMetadata(
@@ -780,7 +798,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 playQueue[currentQueueIndex.intValue]
             }
             PlaybackMode.RANDOM -> {
-                // 随机播放
                 if (playQueue.size == 1) {
                     playQueue.first()
                 } else {
@@ -794,17 +811,60 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     playQueue[randomIndex]
                 }
             }
-            PlaybackMode.SEQUENCE -> {
-                // 顺序播放
+            PlaybackMode.SEQUENCE, PlaybackMode.CONTINUOUS -> {
                 val nextIndex = (currentQueueIndex.intValue + 1) % playQueue.size
                 currentQueueIndex.intValue = nextIndex
                 Log.d("MusicVM", "顺序播放模式，下一首索引: $nextIndex")
                 playQueue[nextIndex]
             }
         }
+
+        // 持续播放模式：当当前歌曲是歌单最后一首时，处理歌单切换
+        if (playMode.value == PlaybackMode.CONTINUOUS && playlistQueue.isNotEmpty()) {
+            val currentIndex = playQueue.indexOfFirst { isSameSong(it, currentSong.value ?: return@nextSong) }
+            if (currentIndex == playQueue.size - 1) {
+                // 当前歌曲是歌单最后一首，尝试切换到下一个歌单
+                handleContinuousModePlaylistSwitch()
+                // 如果切换成功，handleContinuousModePlaylistSwitch 已经调用了 startPlaying，直接返回
+                return
+            }
+        }
         
-        startPlaying(nextSong, playQueue)
+        applyFadeOut {
+            startPlaying(nextSong, playQueue)
+        }
         Log.d("MusicVM", "下一首: ${nextSong.name}, 索引: $currentQueueIndex")
+    }
+    
+    private fun handleContinuousModePlaylistSwitch() {
+        if (playlistQueue.isEmpty()) {
+            Log.d("MusicVM", "持续播放模式：歌单队列为空，停止播放")
+            player.pause()
+            isPlaying.value = false
+            return
+        }
+        
+        val nextPlaylistIndex = currentPlaylistIndex.intValue + 1
+        if (nextPlaylistIndex >= playlistQueue.size) {
+            Log.d("MusicVM", "持续播放模式：所有歌单已播放完毕，停止播放")
+            player.pause()
+            isPlaying.value = false
+            return
+        }
+        
+        // 切换到下一个歌单
+        val nextPlaylist = playlistQueue[nextPlaylistIndex]
+        currentPlaylistIndex.intValue = nextPlaylistIndex
+        playQueue.clear()
+        playQueue.addAll(nextPlaylist.songs)
+        currentQueueIndex.intValue = 0
+        
+        // 开始播放新歌单的第一首歌
+        if (nextPlaylist.songs.isNotEmpty()) {
+            startPlaying(nextPlaylist.songs[0], nextPlaylist.songs)
+        }
+        
+        Log.d("MusicVM", "持续播放模式：切换到下一个歌单: ${nextPlaylist.name}")
     }
 
     // 设置歌词内容
@@ -886,7 +946,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     playQueue[randomIndex]
                 }
             }
-            PlaybackMode.SEQUENCE -> {
+            PlaybackMode.SEQUENCE, PlaybackMode.CONTINUOUS -> {
                 // 顺序播放：计算上一首索引
                 val prevIndex = if (currentQueueIndex.intValue == 0) {
                     playQueue.size - 1  // 如果是第一首，跳转到最后一首
@@ -899,20 +959,22 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         
-        startPlaying(prevSong, playQueue)
+        applyFadeOut {
+            startPlaying(prevSong, playQueue)
+        }
         Log.d("MusicVM", "上一首: ${prevSong.name}, 索引: $currentQueueIndex")
     }
     
    // 播放控制
 fun togglePlay() {
     if (player.isPlaying) {
-        player.pause()
-        isPlaying.value = false
-        // 释放音频焦点
-        audioManager.abandonAudioFocus(audioFocusChangeListener)
-        mediaSessionManager.updatePlaybackState(false, player.currentPosition) 
+        applyFadeOut {
+            player.pause()
+            isPlaying.value = false
+            audioManager.abandonAudioFocus(audioFocusChangeListener)
+            mediaSessionManager.updatePlaybackState(false, player.currentPosition)
+        }
     } else {
-        // 重新请求音频焦点
         if (audioManager.requestAudioFocus(
                 audioFocusChangeListener,
                 AudioManager.STREAM_MUSIC,
@@ -921,6 +983,7 @@ fun togglePlay() {
         ) {
             player.play()
             isPlaying.value = true
+            applyFadeIn()
             mediaSessionManager.updatePlaybackState(true, player.currentPosition)
         }
     }
@@ -933,6 +996,43 @@ fun togglePlay() {
         currentPosition.longValue = newPosition
         mediaSessionManager.updatePlaybackState(player.isPlaying, newPosition)
     }
+
+    private fun applyFadeIn() {
+        val context = getApplication<Application>()
+        if (!DownloadSettingsStore.isFadeEnabled(context)) return
+        
+        fadeJob?.cancel()
+        player.volume = 0f
+        fadeJob = viewModelScope.launch {
+            val steps = (FADE_DURATION_MS / FADE_STEP_MS).toInt()
+            val volumeStep = 1f / steps
+            repeat(steps) { step ->
+                player.volume = (step + 1) * volumeStep
+                delay(FADE_STEP_MS)
+            }
+            player.volume = 1f
+        }
+    }
+
+    private fun applyFadeOut(onComplete: () -> Unit) {
+        val context = getApplication<Application>()
+        if (!DownloadSettingsStore.isFadeEnabled(context)) {
+            onComplete()
+            return
+        }
+        
+        fadeJob?.cancel()
+        fadeJob = viewModelScope.launch {
+            val steps = (FADE_DURATION_MS / FADE_STEP_MS).toInt()
+            val volumeStep = 1f / steps
+            repeat(steps) { step ->
+                player.volume = 1f - (step + 1) * volumeStep
+                delay(FADE_STEP_MS)
+            }
+            player.volume = 0f
+            onComplete()
+        }
+    }
     
     /**
      * 添加歌曲到播放队列末尾
@@ -941,6 +1041,30 @@ fun togglePlay() {
         if (!playQueue.any { it.id == song.id }) {
             playQueue.add(song)
             Log.d("MusicVM", "添加到队列: ${song.name}, 队列大小: ${playQueue.size}")
+        } else {
+            Log.d("MusicVM", "歌曲已在队列中: ${song.name}")
+        }
+    }
+    
+    /**
+     * 添加歌曲到当前播放歌曲的下一首位置
+     */
+    fun addNextToQueue(song: Song) {
+        Log.d("MusicVM", "addNextToQueue called: ${song.name}, id: ${song.id}, url: ${song.url}")
+        if (playQueue.isEmpty()) {
+            playQueue.add(song)
+            currentQueueIndex.intValue = 0
+            Log.d("MusicVM", "队列为空，添加歌曲作为第一首: ${song.name}")
+            return
+        }
+
+        val insertIndex = (currentQueueIndex.intValue + 1).coerceIn(0, playQueue.size)
+        val isDuplicate = playQueue.any { q ->
+            (q.id.isNotBlank() && q.id == song.id) || (q.url.isNotBlank() && q.url == song.url)
+        }
+        if (!isDuplicate) {
+            playQueue.add(insertIndex, song)
+            Log.d("MusicVM", "添加到当前播放歌曲下一首: ${song.name}, 插入位置: $insertIndex, 队列大小: ${playQueue.size}")
         } else {
             Log.d("MusicVM", "歌曲已在队列中: ${song.name}")
         }
@@ -991,6 +1115,81 @@ fun togglePlay() {
             Log.d("MusicVM", "从队列移除: ${song.name}, 新队列大小: ${playQueue.size}")
         }
     }
+    
+    /**
+     * 移动队列中的歌曲
+     * @param fromIndex 起始索引
+     * @param toIndex 目标索引
+     */
+    fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+        if (fromIndex < 0 || fromIndex >= playQueue.size || toIndex < 0 || toIndex >= playQueue.size) {
+            Log.w("MusicVM", "队列索引无效: from=$fromIndex, to=$toIndex")
+            return
+        }
+        
+        val item = playQueue.removeAt(fromIndex)
+        playQueue.add(toIndex, item)
+        
+        // 调整当前播放歌曲索引
+        when {
+            currentQueueIndex.intValue == fromIndex -> {
+                currentQueueIndex.intValue = toIndex
+            }
+            fromIndex < currentQueueIndex.intValue && toIndex >= currentQueueIndex.intValue -> {
+                currentQueueIndex.intValue = currentQueueIndex.intValue - 1
+            }
+            fromIndex > currentQueueIndex.intValue && toIndex <= currentQueueIndex.intValue -> {
+                currentQueueIndex.intValue = currentQueueIndex.intValue + 1
+            }
+        }
+        
+        Log.d("MusicVM", "队列歌曲移动: from=$fromIndex, to=$toIndex, 当前播放索引: ${currentQueueIndex.intValue}")
+    }
+
+    fun moveQueueItems(fromIndices: List<Int>, toIndex: Int) {
+        if (fromIndices.isEmpty()) return
+        
+        val sortedIndices = fromIndices.sorted()
+        val minIndex = sortedIndices.first()
+        val maxIndex = sortedIndices.last()
+        val rangeSize = fromIndices.size
+        
+        if (toIndex < 0 || toIndex > playQueue.size - rangeSize) return
+        
+        val songsToMove = sortedIndices.map { playQueue[it] }
+        
+        for (i in sortedIndices.reversed()) {
+            playQueue.removeAt(i)
+        }
+        
+        for ((i, song) in songsToMove.withIndex()) {
+            playQueue.add(toIndex + i, song)
+        }
+        
+        val newIndices = (toIndex until toIndex + rangeSize).toSet()
+        
+        when {
+            currentQueueIndex.intValue in fromIndices -> {
+                val oldPos = fromIndices.indexOf(currentQueueIndex.intValue)
+                currentQueueIndex.intValue = toIndex + oldPos
+            }
+            currentQueueIndex.intValue in minIndex..maxIndex -> {
+                if (toIndex <= minIndex) {
+                    currentQueueIndex.intValue = currentQueueIndex.intValue + rangeSize
+                } else {
+                    currentQueueIndex.intValue = currentQueueIndex.intValue - rangeSize
+                }
+            }
+            minIndex < currentQueueIndex.intValue && toIndex >= currentQueueIndex.intValue -> {
+                currentQueueIndex.intValue = currentQueueIndex.intValue - rangeSize
+            }
+            maxIndex > currentQueueIndex.intValue && toIndex <= currentQueueIndex.intValue -> {
+                currentQueueIndex.intValue = currentQueueIndex.intValue + rangeSize
+            }
+        }
+        
+        Log.d("MusicVM", "批量移动: from=$sortedIndices, to=$toIndex, 新索引=$newIndices")
+    }
 
     /**
      * 清空播放队列
@@ -1012,17 +1211,120 @@ fun togglePlay() {
         Log.d("MusicVM", "队列已清空，之前大小: $previousSize")
     }
     
+    /**
+     * 添加歌单到歌单队列
+     * @param playlist 歌单
+     */
+    fun addPlaylistToQueue(playlist: PlaylistQueueItem) {
+        if (!playlistQueue.any { it.id == playlist.id }) {
+            playlistQueue.add(playlist)
+            Log.d("MusicVM", "添加歌单到队列: ${playlist.name}, 歌单队列大小: ${playlistQueue.size}")
+        } else {
+            Log.d("MusicVM", "歌单已在队列中: ${playlist.name}")
+        }
+    }
+    
+    /**
+     * 从歌单队列移除指定歌单
+     * @param playlistId 歌单ID
+     */
+    fun removePlaylistFromQueue(playlistId: String) {
+        val index = playlistQueue.indexOfFirst { it.id == playlistId }
+        if (index == -1) {
+            Log.d("MusicVM", "歌单不在队列中: $playlistId")
+            return
+        }
+        
+        playlistQueue.removeAt(index)
+        
+        // 如果移除的是当前播放的歌单或之前的歌单，需要调整索引
+        if (index <= currentPlaylistIndex.intValue) {
+            currentPlaylistIndex.intValue = (currentPlaylistIndex.intValue - 1).coerceAtLeast(0)
+        }
+        
+        Log.d("MusicVM", "从歌单队列移除: $playlistId, 新歌单队列大小: ${playlistQueue.size}")
+    }
+    
+    /**
+     * 清空歌单队列
+     */
+    fun clearPlaylistQueue() {
+        playlistQueue.clear()
+        currentPlaylistIndex.intValue = -1
+        Log.d("MusicVM", "歌单队列已清空")
+    }
+    
+    /**
+     * 播放指定歌单
+     * @param playlist 歌单
+     */
+    fun playPlaylist(playlist: PlaylistQueueItem) {
+        val playlistIndex = playlistQueue.indexOfFirst { it.id == playlist.id }
+        if (playlistIndex == -1) {
+            // 歌单不在队列中，先添加
+            addPlaylistToQueue(playlist)
+            currentPlaylistIndex.intValue = playlistQueue.size - 1
+        } else {
+            currentPlaylistIndex.intValue = playlistIndex
+        }
+        
+        playQueue.clear()
+        playQueue.addAll(playlist.songs)
+        currentQueueIndex.intValue = 0
+        
+        if (playlist.songs.isNotEmpty()) {
+            startPlaying(playlist.songs[0], playlist.songs)
+        }
+        
+        Log.d("MusicVM", "播放歌单: ${playlist.name}, 歌曲数: ${playlist.songs.size}")
+    }
+    
+    /**
+     * 重新排序歌单队列
+     * @param fromIndex 起始索引
+     * @param toIndex 目标索引
+     */
+    fun movePlaylistQueueItem(fromIndex: Int, toIndex: Int) {
+        if (fromIndex < 0 || fromIndex >= playlistQueue.size || toIndex < 0 || toIndex >= playlistQueue.size) {
+            Log.w("MusicVM", "歌单队列索引无效: from=$fromIndex, to=$toIndex")
+            return
+        }
+        
+        val item = playlistQueue.removeAt(fromIndex)
+        playlistQueue.add(toIndex, item)
+        
+        // 调整当前播放歌单索引
+        when {
+            currentPlaylistIndex.intValue == fromIndex -> {
+                currentPlaylistIndex.intValue = toIndex
+            }
+            fromIndex < currentPlaylistIndex.intValue && toIndex >= currentPlaylistIndex.intValue -> {
+                currentPlaylistIndex.intValue = currentPlaylistIndex.intValue - 1
+            }
+            fromIndex > currentPlaylistIndex.intValue && toIndex <= currentPlaylistIndex.intValue -> {
+                currentPlaylistIndex.intValue = currentPlaylistIndex.intValue + 1
+            }
+        }
+        
+        Log.d("MusicVM", "歌单队列重排序: from=$fromIndex, to=$toIndex, 当前播放歌单索引: ${currentPlaylistIndex.intValue}")
+    }
+    
     // 辅助方法
     private fun parseLrc(lrc: String): List<LrcLine> {
         val lines = mutableListOf<LrcLine>()
         val regex = Regex("\\[(\\d{2}):(\\d{2})[\\.:](\\d{2,3})\\](.*)")
+        val timestampRegex = Regex("\\[(\\d{2}):(\\d{2})[\\.:](\\d{2,3})\\]")
+        
         lrc.lines().forEach { line ->
             val match = regex.find(line)
             if (match != null) {
                 val time = match.groupValues[1].toLong() * 60000 + 
                           match.groupValues[2].toLong() * 1000 + 
                           (match.groupValues[3].toLong().let { if (it < 100) it * 10 else it })
-                lines.add(LrcLine(time, match.groupValues[4].trim()))
+                
+                // 移除文本中的所有时间戳标记
+                val text = timestampRegex.replace(match.groupValues[4].trim(), "").trim()
+                lines.add(LrcLine(time, text))
             }
         }
         return lines.sortedBy { it.time }
@@ -1132,6 +1434,9 @@ fun togglePlay() {
     }
     
     companion object {
+        private const val FADE_DURATION_MS = 500L
+        private const val FADE_STEP_MS = 50L
+
         /**
          * 静态方法：获取历史记录
          * @param context 上下文
