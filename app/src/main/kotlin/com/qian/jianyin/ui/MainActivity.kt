@@ -1858,7 +1858,8 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                     LazyColumn(state = queueState, modifier = Modifier.weight(1f, fill = false)) {
                         itemsIndexed(vm.playQueue, key = { _, song -> song.id.ifBlank { song.url } }) { index, s ->
                             val isDragging = draggedSongIndex == index
-                            val isSelected = selectedSongs.contains(s.url)
+                            val songKey = s.id.ifBlank { s.url }
+                            val isSelected = selectedSongs.contains(songKey)
                             
                             // 微小的弹簧缩放动画
                             val scale by animateFloatAsState(
@@ -1890,7 +1891,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                                 detectTapGestures(
                                                     onTap = {
                                                         if (isSelectionMode) {
-                                                            selectedSongs = if (selectedSongs.contains(s.url)) selectedSongs - s.url else selectedSongs + s.url
+                                                            selectedSongs = if (selectedSongs.contains(songKey)) selectedSongs - songKey else selectedSongs + songKey
                                                         } else {
                                                             vm.playSong(s)
                                                         }
@@ -2097,13 +2098,13 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                                     else
                                                         Color(0xFFFFFEFE)
                                                 )
-                                                .then(if (isSelectionMode) Modifier.clickable { selectedSongs = if (selectedSongs.contains(s.url)) selectedSongs - s.url else selectedSongs + s.url } else Modifier),
+                                                .then(if (isSelectionMode) Modifier.clickable { selectedSongs = if (selectedSongs.contains(songKey)) selectedSongs - songKey else selectedSongs + songKey } else Modifier),
                                             contentScale = ContentScale.Crop
                                         )
                                         
                                         Column(modifier = Modifier
                                             .padding(start = 16.dp, top = 12.dp, end = 12.dp, bottom = 12.dp)
-                                            .then(if (isSelectionMode) Modifier.clickable { selectedSongs = if (selectedSongs.contains(s.url)) selectedSongs - s.url else selectedSongs + s.url } else Modifier)) {
+                                            .then(if (isSelectionMode) Modifier.clickable { selectedSongs = if (selectedSongs.contains(songKey)) selectedSongs - songKey else selectedSongs + songKey } else Modifier)) {
                                             Text(
                                                 s.name,
                                                 color = if (s == currentSong && !isSelectionMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
