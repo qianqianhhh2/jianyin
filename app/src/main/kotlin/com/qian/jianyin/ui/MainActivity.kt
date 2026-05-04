@@ -161,6 +161,8 @@ private fun startKeepAliveServices(context: Context) {
 class MainActivity : ComponentActivity() {
     // 用于存储文件夹选择的结果
     var folderUriCallback: ((Uri) -> Unit)? = null
+    // 用于存储下载路径选择的结果（SAF授权）
+    var downloadPathCallback: ((Uri) -> Unit)? = null
     // 用于存储 ViewModel 引用，以便在 onActivityResult 中使用
     private var viewModel: MusicViewModel? = null
     // 用于 B 站登录的 ActivityResultLauncher
@@ -445,6 +447,16 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        } else if (requestCode == 1004 && resultCode == RESULT_OK) {
+            // SAF下载路径选择
+            data?.data?.let {uri ->
+                // 持久化授权
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+                downloadPathCallback?.invoke(uri)
+            }
         }
     }
     
@@ -666,11 +678,15 @@ fun MainScreenFramework(vm: MusicViewModel = viewModel(), isDarkMode: Boolean = 
         vm.isPlayerSheetVisible.value = false
     }
     
-    // 全局返回键两次退出
+    // 全局返回键退出应用（两次确认）
     BackHandler(enabled = !vm.isPlayerSheetVisible.value) {
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastBackPressTime < 1000) {
-            (context as? Activity)?.finishAffinity()
+            val intent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
         } else {
             lastBackPressTime = currentTime
             Toast.makeText(context, "再按一次退出应用", Toast.LENGTH_SHORT).show()
@@ -1265,11 +1281,11 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                         DownloadStateManager.startDownload(1)
                                         DownloadStateManager.updateCurrentSong(0, song.name)
                                         scope.launch {
-                                            val customPath = if (DownloadSettingsStore.isUsingCustomPath(context)) DownloadSettingsStore.getCustomPath(context) else null
+                                            val customUri = if (DownloadSettingsStore.isUsingCustomPath(context)) DownloadSettingsStore.getCustomUri(context) else null
                                             DownloadManager.downloadSong(
                                                 context, 
                                                 song, 
-                                                customPath
+                                                customUri
                                             ) {
                                                 DownloadStateManager.updateProgress(it)
                                             }

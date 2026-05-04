@@ -192,11 +192,11 @@ fun SearchScreen(
                                         }
                                         if (songsToDownload.isNotEmpty()) {
                                             scope.launch {
-                                                val customPath = if (DownloadSettingsStore.isUsingCustomPath(context)) {
-                                                    DownloadSettingsStore.getCustomPath(context)
+                                                val customUri = if (DownloadSettingsStore.isUsingCustomPath(context)) {
+                                                    DownloadSettingsStore.getCustomUri(context)
                                                 } else null
                                                 DownloadStateManager.startDownload(songsToDownload.size)
-                                                DownloadManager.downloadSongs(context, songsToDownload, customPath) { index, total, songName, progress ->
+                                                DownloadManager.downloadSongs(context, songsToDownload, customUri) { index, total, songName, progress ->
                                                     DownloadStateManager.updateCurrentSong(index, songName)
                                                     DownloadStateManager.updateProgress(progress)
                                                 }.onSuccess { results ->

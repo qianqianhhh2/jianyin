@@ -167,7 +167,7 @@ class BackupManager(private val context: Context) {
             "downloadQuality" to DownloadSettingsStore.getDownloadQuality(context),
             "lyricSource" to DownloadSettingsStore.getLyricSource(context),
             "useCustomPath" to DownloadSettingsStore.isUsingCustomPath(context),
-            "customPath" to (DownloadSettingsStore.getCustomPath(context) ?: "")
+            "customUri" to (DownloadSettingsStore.getCustomUri(context)?.toString() ?: "")
         )
         val allPlaylists = PlaylistDataStore.getAll(context)
         // 收集歌单ID列表，排除收藏歌单
@@ -249,13 +249,19 @@ class BackupManager(private val context: Context) {
                 DownloadSettingsStore.setLyricSource(context, it.toInt())
             }
         }
-        // 恢复自定义路径设置
+        // 恢复自定义路径设置（支持旧版customPath和新版customUri）
         val useCustomPath = settings["useCustomPath"] as? Boolean ?: false
-        val customPath = settings["customPath"] as? String ?: ""
-        if (useCustomPath && customPath.isNotEmpty()) {
-            DownloadSettingsStore.setCustomPath(context, customPath)
+        val customUriStr = settings["customUri"] as? String ?: ""
+        // 兼容旧版备份数据
+        val oldCustomPath = settings["customPath"] as? String ?: ""
+        
+        if (useCustomPath && customUriStr.isNotEmpty()) {
+            DownloadSettingsStore.setCustomUri(context, android.net.Uri.parse(customUriStr))
+        } else if (useCustomPath && oldCustomPath.isNotEmpty()) {
+            // 旧版备份数据，不恢复路径（需要用户重新授权）
+            DownloadSettingsStore.setCustomUri(context, null)
         } else {
-            DownloadSettingsStore.setCustomPath(context, null)
+            DownloadSettingsStore.setCustomUri(context, null)
         }
     }
     

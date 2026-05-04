@@ -1,6 +1,7 @@
 package com.qian.jianyin
 
 import android.content.Context
+import android.net.Uri
 import android.os.Environment
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -9,16 +10,19 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * 下载设置存储类
  * 负责管理下载路径的设置，包括默认路径和自定义路径
+ * 使用SAF（Storage Access Framework）授权方式
  */
 object DownloadSettingsStore {
     private const val PREFS_NAME = "download_settings"
-    private const val KEY_CUSTOM_PATH = "custom_download_path"
+    private const val KEY_CUSTOM_URI = "custom_download_uri"
     private const val KEY_USE_CUSTOM_PATH = "use_custom_path"
     private const val KEY_DOWNLOAD_QUALITY = "download_quality"
     private const val KEY_PLAY_QUALITY = "play_quality"
     private const val KEY_LYRIC_SOURCE = "lyric_source" // 0: 内嵌, 1: 网络
     private const val KEY_DARK_MODE = "dark_mode" // 0: 跟随系统, 1: 浅色, 2: 深色
     private const val KEY_FADE_ENABLED = "fade_enabled"
+    // 旧版key用于迁移
+    private const val KEY_CUSTOM_PATH_OLD = "custom_download_path"
 
     private val _darkModeFlow = MutableStateFlow(0)
     val darkModeFlow: StateFlow<Int> = _darkModeFlow.asStateFlow()
@@ -31,34 +35,42 @@ object DownloadSettingsStore {
     }
     
     /**
-     * 获取当前下载路径
+     * 获取自定义下载Uri
      * @param context 上下文
-     * @return 下载路径
+     * @return 自定义Uri，如果未设置则返回 null
      */
-    fun getDownloadPath(context: Context): String {
+    fun getCustomUri(context: Context): Uri? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val useCustom = prefs.getBoolean(KEY_USE_CUSTOM_PATH, false)
-        
-        return if (useCustom) {
-            prefs.getString(KEY_CUSTOM_PATH, null) ?: getDefaultDownloadPath()
-        } else {
-            getDefaultDownloadPath()
+        val uriString = prefs.getString(KEY_CUSTOM_URI, null)
+        if (uriString != null && uriString.isNotBlank()) {
+            return try {
+                Uri.parse(uriString.trim())
+            } catch (e: Exception) {
+                null
+            }
         }
+        val oldPath = prefs.getString(KEY_CUSTOM_PATH_OLD, null)
+        if (oldPath != null) {
+            prefs.edit().remove(KEY_CUSTOM_PATH_OLD).apply()
+            return null
+        }
+        return null
     }
     
     /**
-     * 设置自定义下载路径
+     * 设置自定义下载Uri（使用SAF授权）
      * @param context 上下文
-     * @param path 自定义路径，如果为 null 则使用默认路径
+     * @param uri 自定义Uri，如果为 null 则使用默认路径
      */
-    fun setCustomPath(context: Context, path: String?) {
+    fun setCustomUri(context: Context, uri: Uri?) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-        if (path != null) {
+        if (uri != null && uri.toString().isNotBlank()) {
             prefs.putBoolean(KEY_USE_CUSTOM_PATH, true)
-            prefs.putString(KEY_CUSTOM_PATH, path)
+            prefs.putString(KEY_CUSTOM_URI, uri.toString().trim())
+            prefs.remove(KEY_CUSTOM_PATH_OLD)
         } else {
             prefs.putBoolean(KEY_USE_CUSTOM_PATH, false)
-            prefs.remove(KEY_CUSTOM_PATH)
+            prefs.remove(KEY_CUSTOM_URI)
         }
         prefs.apply()
     }
@@ -71,16 +83,6 @@ object DownloadSettingsStore {
     fun isUsingCustomPath(context: Context): Boolean {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getBoolean(KEY_USE_CUSTOM_PATH, false)
-    }
-    
-    /**
-     * 获取自定义下载路径
-     * @param context 上下文
-     * @return 自定义路径，如果未设置则返回 null
-     */
-    fun getCustomPath(context: Context): String? {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_CUSTOM_PATH, null)
     }
     
     /**

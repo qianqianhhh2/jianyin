@@ -141,7 +141,7 @@ fun MyMusicScreenV2(
     var showDownloadPathDialog by remember { mutableStateOf(false) }
     var showBackupDialog by remember { mutableStateOf(false) }
     var useCustomPath by remember { mutableStateOf(false) }
-    var customPathInput by remember { mutableStateOf("") }
+    var customUri by remember { mutableStateOf<Uri?>(null) }
     // 音质设置相关状态
     var showAudioQualityDialog by remember { mutableStateOf(false) }
     var selectedDownloadQuality by remember { mutableStateOf(192) }
@@ -1257,17 +1257,17 @@ fun MyMusicScreenV2(
                                                 }
 
                                             scope.launch {
-                                                val customPath =
+                                                val customUri =
                                                     if (DownloadSettingsStore.isUsingCustomPath(
                                                             context
                                                         )
-                                                    ) DownloadSettingsStore.getCustomPath(context) else null
+                                                    ) DownloadSettingsStore.getCustomUri(context) else null
                                                 DownloadStateManager.startDownload(songsToDownload.size)
 
                                                 DownloadManager.downloadSongs(
                                                     context,
                                                     songsToDownload,
-                                                    customPath
+                                                    customUri
                                                 ) { index, total, songName, progress ->
                                                     DownloadStateManager.updateCurrentSong(
                                                         index,
@@ -2031,17 +2031,17 @@ fun MyMusicScreenV2(
                                                                         song.name
                                                                     )
                                                                     scope.launch {
-                                                                        val customPath =
+                                                                        val customUri =
                                                                             if (DownloadSettingsStore.isUsingCustomPath(
                                                                                     context
                                                                                 )
-                                                                            ) DownloadSettingsStore.getCustomPath(
+                                                                            ) DownloadSettingsStore.getCustomUri(
                                                                                 context
                                                                             ) else null
                                                                         DownloadManager.downloadSong(
                                                                             context,
                                                                             song,
-                                                                            customPath
+                                                                            customUri
                                                                         ) {
                                                                             DownloadStateManager.updateProgress(
                                                                                 it
@@ -2265,17 +2265,17 @@ fun MyMusicScreenV2(
 
                                         if (songsToDownload.isNotEmpty()) {
                                             scope.launch {
-                                                val customPath =
+                                                val customUri =
                                                     if (DownloadSettingsStore.isUsingCustomPath(
                                                             context
                                                         )
-                                                    ) DownloadSettingsStore.getCustomPath(context) else null
+                                                    ) DownloadSettingsStore.getCustomUri(context) else null
                                                 DownloadStateManager.startDownload(songsToDownload.size)
 
                                                 DownloadManager.downloadSongs(
                                                     context,
                                                     songsToDownload,
-                                                    customPath
+                                                    customUri
                                                 ) { index, total, songName, progress ->
                                                     DownloadStateManager.updateCurrentSong(
                                                         index,
@@ -2484,17 +2484,17 @@ fun MyMusicScreenV2(
                                                                 song.name
                                                             )
                                                             scope.launch {
-                                                                val customPath =
+                                                                val customUri =
                                                                     if (DownloadSettingsStore.isUsingCustomPath(
                                                                             context
                                                                         )
-                                                                    ) DownloadSettingsStore.getCustomPath(
+                                                                    ) DownloadSettingsStore.getCustomUri(
                                                                         context
                                                                     ) else null
                                                                 DownloadManager.downloadSong(
                                                                     context,
                                                                     song,
-                                                                    customPath
+                                                                    customUri
                                                                 ) {
                                                                     DownloadStateManager.updateProgress(
                                                                         it
@@ -2745,7 +2745,13 @@ fun MyMusicScreenV2(
                 // 初始化状态
                 LaunchedEffect(Unit) {
                     useCustomPath = DownloadSettingsStore.isUsingCustomPath(context)
-                    customPathInput = DownloadSettingsStore.getCustomPath(context) ?: ""
+                    customUri = DownloadSettingsStore.getCustomUri(context)
+                }
+
+                // 获取Uri的显示路径
+                fun getUriPath(uri: Uri?): String {
+                    if (uri == null) return "未选择"
+                    return uri.path ?: uri.toString()
                 }
 
                 AlertDialog(
@@ -2779,7 +2785,7 @@ fun MyMusicScreenV2(
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // 使用自定义路径选项
+                            // 使用自定义路径选项（SAF授权）
                             Row(
                                 modifier = Modifier.fillMaxWidth().clickable {
                                     useCustomPath = true
@@ -2795,33 +2801,48 @@ fun MyMusicScreenV2(
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text("使用自定义路径")
-                                    OutlinedTextField(
-                                        value = customPathInput,
-                                        onValueChange = { customPathInput = it },
-                                        label = { Text("自定义路径") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        enabled = useCustomPath,
-                                        colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = colorScheme.primary,
-                                            unfocusedBorderColor = colorScheme.outline,
-                                            focusedContainerColor = colorScheme.surfaceVariant.copy(
-                                                alpha = 0.8f
-                                            ),
-                                            unfocusedContainerColor = colorScheme.surfaceVariant.copy(
-                                                alpha = 0.6f
-                                            )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            getUriPath(customUri),
+                                            fontSize = 12.sp,
+                                            color = colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.weight(1f)
                                         )
-                                    )
+                                        if (useCustomPath) {
+                                            IconButton(onClick = {
+                                                // 打开SAF文件选择器
+                                                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                                                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                                                intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                                                (context as? MainActivity)?.downloadPathCallback = { uri ->
+                                                    customUri = uri
+                                                }
+                                                (context as? Activity)?.startActivityForResult(intent, 1004)
+                                            }) {
+                                                Icon(Icons.Default.FolderOpen, null, tint = colorScheme.primary)
+                                            }
+                                        }
+                                    }
                                 }
+                            }
+
+                            if (useCustomPath) {
+                                Text(
+                                    "提示：选择的目录需要授权写入权限",
+                                    fontSize = 11.sp,
+                                    color = colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    modifier = Modifier.padding(top = 8.dp)
+                                )
                             }
                         }
                     },
                     confirmButton = {
                         TextButton(onClick = {
                             if (useCustomPath) {
-                                DownloadSettingsStore.setCustomPath(context, customPathInput)
+                                DownloadSettingsStore.setCustomUri(context, customUri)
                             } else {
-                                DownloadSettingsStore.setCustomPath(context, null)
+                                DownloadSettingsStore.setCustomUri(context, null)
                             }
                             showDownloadPathDialog = false
                         }) {
