@@ -321,6 +321,13 @@ object DownloadManager {
     }
     
     /**
+     * 检查URI是否为SAF tree URI
+     */
+    private fun isSafTreeUri(uri: Uri): Boolean {
+        return uri.scheme == "content" && uri.toString().contains("com.android.externalstorage")
+    }
+    
+    /**
      * 获取或创建目录（使用SAF）
      * @param context 上下文
      * @param baseUri 基础目录Uri，如果为null则使用默认下载目录
@@ -332,6 +339,17 @@ object DownloadManager {
         if (parentUri.toString().isBlank()) {
             return getOrCreateDirectory(context, null, dirName)
         }
+        
+        // 如果是文件URI，使用传统文件方式
+        if (parentUri.scheme == "file") {
+            val file = File(parentUri.path, dirName)
+            if (!file.exists()) {
+                file.mkdirs()
+            }
+            return Uri.fromFile(file)
+        }
+        
+        // SAF方式
         val docId = DocumentsContract.getTreeDocumentId(parentUri)
         val documentUri = DocumentsContract.buildDocumentUriUsingTree(parentUri, docId)
         return DocumentsContract.createDocument(
@@ -365,6 +383,13 @@ object DownloadManager {
      * 在目录中查找文件
      */
     private fun findFile(context: Context, parentUri: Uri, fileName: String): Uri? {
+        // 如果是文件URI，使用传统文件方式
+        if (parentUri.scheme == "file") {
+            val file = File(parentUri.path, fileName)
+            return if (file.exists()) Uri.fromFile(file) else null
+        }
+        
+        // SAF方式
         val docId = DocumentsContract.getTreeDocumentId(parentUri)
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, docId)
         context.contentResolver.query(childrenUri, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)?.use { cursor ->
@@ -390,6 +415,16 @@ object DownloadManager {
      * 创建文件
      */
     private fun createFile(context: Context, parentUri: Uri, fileName: String): Uri {
+        // 如果是文件URI，使用传统文件方式
+        if (parentUri.scheme == "file") {
+            val file = File(parentUri.path, fileName)
+            if (file.exists()) {
+                file.delete()
+            }
+            file.createNewFile()
+            return Uri.fromFile(file)
+        }
+        
         // 先检查文件是否已存在，如果存在则删除
         findFile(context, parentUri, fileName)?.let { existingUri ->
             DocumentsContract.deleteDocument(context.contentResolver, existingUri)
