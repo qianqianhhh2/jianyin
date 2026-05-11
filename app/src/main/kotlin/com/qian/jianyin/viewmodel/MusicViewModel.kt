@@ -27,6 +27,7 @@ import moe.ouom.biliapi.BiliApi
 import moe.ouom.biliapi.BiliWebLoginHelper
 import moe.ouom.biliapi.BiliAudioStreamInfo
 import moe.ouom.biliapi.SavedCookieAuthState
+import com.qian.jianyin.playback.DesktopLyricService
 
 // 歌单队列项数据类
 data class PlaylistQueueItem(
@@ -543,7 +544,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         
         // 记录播放次数
         val statsManager = MusicStatsManager(getApplication())
-        statsManager.recordPlay(song.id.ifBlank { song.url })
+        val songKey = song.id.ifBlank { song.url }
+        statsManager.recordPlay(songKey)
+
+        // 自动缓存逻辑：播放超过3次且未下载过则自动下载
+        checkAutoCache(song)
 
         //配置并准备播放器
         try {
@@ -563,7 +568,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             val mediaMetadata = MediaMetadata.Builder()
                 .setTitle(song.name)
                 .setArtist(song.artist)
-                .setArtworkUri(if (localCoverPath != null) Uri.fromFile(File(localCoverPath)) else Uri.parse(song.pic))
+                .setArtworkUri(if (localCoverPath != null) {
+                    if (localCoverPath.startsWith("content://") || localCoverPath.startsWith("file://")) {
+                        Uri.parse(localCoverPath)
+                    } else {
+                        Uri.fromFile(File(localCoverPath))
+                    }
+                } else Uri.parse(song.pic))
                 .build()
             
             // 处理播放音质
@@ -576,8 +587,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     if (localSongPath != null) {
                         // 使用本地文件播放
                         withContext(Dispatchers.Main) {
+                            val mediaUri = if (localSongPath.startsWith("content://") || localSongPath.startsWith("file://")) {
+                                Uri.parse(localSongPath)
+                            } else {
+                                Uri.fromFile(File(localSongPath))
+                            }
                             val mediaItem = MediaItem.Builder()
-                                .setUri(Uri.fromFile(File(localSongPath)))
+                                .setUri(mediaUri)
                                 .setMediaMetadata(mediaMetadata)
                                 .build()
 
@@ -661,7 +677,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 
                 val mediaItem = MediaItem.Builder()
-                    .setUri(if (localSongPath != null) Uri.fromFile(File(localSongPath)) else Uri.parse(finalUrl))
+                    .setUri(if (localSongPath != null) {
+                        if (localSongPath.startsWith("content://") || localSongPath.startsWith("file://")) {
+                            Uri.parse(localSongPath)
+                        } else {
+                            Uri.fromFile(File(localSongPath))
+                        }
+                    } else Uri.parse(finalUrl))
                     .setMediaMetadata(mediaMetadata)
                     .build()
 
@@ -724,8 +746,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         // 尝试获取本地下载的歌词或从网络获取
                         val localLrcPath = DownloadManager.getLocalLrcPath(getApplication(), song)
                         lrcContent = if (localLrcPath != null) {
-                            // 使用本地已下载的歌词
-                            File(localLrcPath).readText()
+                            if (localLrcPath.startsWith("content://")) {
+                                val uri = Uri.parse(localLrcPath)
+                                getApplication<Application>().contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                            } else {
+                                File(localLrcPath).readText()
+                            }
                         } else if (!song.lrc.isNullOrEmpty()) {
                             // 从网络获取歌词
                             if (song.lrc.startsWith("http")) api.getLrcByUrl(song.lrc)
@@ -1340,7 +1366,11 @@ fun togglePlay() {
                 mediaSessionManager.updatePlaybackState(true, currentPos)
                 
                 val idx = currentLrc.indexOfLast { it.time <= player.currentPosition }
-                if (idx != -1) currentLineIndex.intValue = idx
+                if (idx != -1) {
+                    currentLineIndex.intValue = idx
+                    // 更新桌面歌词
+                    DesktopLyricService.updateLyric(currentLrc, idx, true)
+                }
                 delay(500)  // 每500ms更新一次
             }
         }
@@ -1430,6 +1460,53 @@ fun togglePlay() {
         } catch (e: Exception) {
             Log.e("MusicVM", "获取网络歌词失败", e)
             return ""
+        }
+    }
+
+    /**
+     * 检查是否需要自动缓存歌曲
+     * 播放次数超过3次且未下载过则自动下载
+     */
+    private fun checkAutoCache(song: Song) {
+        val context = getApplication<Application>()
+        
+        // 检查自动缓存是否启用
+        if (!DownloadSettingsStore.isAutoCacheEnabled(context)) {
+            return
+        }
+        
+        // 本地歌曲不需要缓存
+        if (song.isLocal) {
+            return
+        }
+        
+        // 检查是否已经下载
+        if (DownloadManager.getLocalSongPath(context, song) != null) {
+            return
+        }
+        
+        // 检查播放次数（使用MusicStatsManager复用现有逻辑）
+        val statsManager = MusicStatsManager(context)
+        val playCount = statsManager.getPlayCountMap()[song.id.ifBlank { song.url }] ?: 0
+        
+        Log.d("MusicVM", "自动缓存检查 - 歌曲: ${song.name}, 播放次数: $playCount")
+        
+        // 播放次数超过3次则自动下载
+        if (playCount > 3) {
+            Log.d("MusicVM", "自动缓存触发 - 歌曲: ${song.name}, 开始下载")
+            
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val result = DownloadManager.downloadSong(context, song)
+                    if (result.isSuccess) {
+                        Log.d("MusicVM", "自动缓存成功 - ${song.name}: ${result.getOrThrow()}")
+                    } else {
+                        Log.e("MusicVM", "自动缓存失败 - ${song.name}: ${result.exceptionOrNull()?.message}")
+                    }
+                } catch (e: Exception) {
+                    Log.e("MusicVM", "自动缓存异常 - ${song.name}", e)
+                }
+            }
         }
     }
     

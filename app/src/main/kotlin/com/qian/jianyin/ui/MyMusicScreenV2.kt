@@ -164,6 +164,13 @@ fun MyMusicScreenV2(
         )
     }
 
+    // 自动缓存设置
+    var autoCacheEnabled by remember {
+        mutableStateOf(
+            DownloadSettingsStore.isAutoCacheEnabled(context)
+        )
+    }
+
     // 深色模式设置相关状态
     var showDarkModeDialog by remember { mutableStateOf(false) }
     var selectedDarkMode by remember {
@@ -2603,6 +2610,7 @@ fun MyMusicScreenV2(
                     SettingsItem("音质设置", Icons.Default.MusicNote, "下载和播放音质选项", "quality"),
                     SettingsItem("本地音乐歌词来源", Icons.Default.LibraryMusic, if (selectedLyricSource == 0) "内嵌" else "网络", "lyric"),
                     SettingsItem("歌曲淡入淡出", Icons.Default.GraphicEq, "播放暂停时音量渐变", "fade"),
+                    SettingsItem("自动缓存", Icons.Default.Download, "播放超过3次自动下载", "auto_cache"),
                     SettingsItem("深色模式", Icons.Default.DarkMode, when (selectedDarkMode) {
                         0 -> "跟随系统"
                         1 -> "浅色"
@@ -2709,6 +2717,14 @@ fun MyMusicScreenV2(
                                                 onCheckedChange = { enabled ->
                                                     fadeEnabled = enabled
                                                     DownloadSettingsStore.setFadeEnabled(context, enabled)
+                                                }
+                                            )
+                                        } else if (item.id == "auto_cache") {
+                                            Switch(
+                                                checked = autoCacheEnabled,
+                                                onCheckedChange = { enabled ->
+                                                    autoCacheEnabled = enabled
+                                                    DownloadSettingsStore.setAutoCacheEnabled(context, enabled)
                                                 }
                                             )
                                         } else {

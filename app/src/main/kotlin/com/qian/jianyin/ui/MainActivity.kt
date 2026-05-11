@@ -114,6 +114,8 @@ import com.qian.jianyin.VersionChecker
 import com.qian.jianyin.VersionUpdate
 import com.qian.jianyin.VersionUpdateDialog
 import com.qian.jianyin.DownloadSettingsStore
+import com.qian.jianyin.playback.DesktopLyricService
+import com.qian.jianyin.playback.DesktopLyricSettings
 import androidx.compose.runtime.collectAsState
 import moe.ouom.biliapi.BiliWebLoginHelper
 import androidx.media3.common.util.UnstableApi
@@ -463,6 +465,129 @@ class MainActivity : ComponentActivity() {
     // 启动 B 站登录
     fun startBiliLogin() {
         BiliWebLoginHelper.startLoginWithExistingLauncher(this, biliLoginLauncher)
+    }
+    
+    // 请求悬浮窗权限的回调
+    private val requestOverlayPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        Log.d("DesktopLyric", "requestOverlayPermission result: isGranted=$isGranted")
+        if (isGranted) {
+            // 权限已授予，启动桌面歌词服务
+            Log.d("DesktopLyric", "Permission granted, starting lyric service")
+            startDesktopLyricService()
+            // 调用回调通知UI更新
+            overlayPermissionCallback?.invoke(true)
+        } else {
+            Log.d("DesktopLyric", "Permission denied")
+            Toast.makeText(this, "需要悬浮窗权限才能使用桌面歌词", Toast.LENGTH_SHORT).show()
+            overlayPermissionCallback?.invoke(false)
+        }
+    }
+    
+    // 悬浮窗权限请求回调
+    private var overlayPermissionCallback: ((Boolean) -> Unit)? = null
+    
+    /**
+     * 请求悬浮窗权限（带回调）
+     */
+    fun requestOverlayPermission(callback: (Boolean) -> Unit) {
+        overlayPermissionCallback = callback
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (!checkOverlayPermission()) {
+                requestOverlayPermissionLauncher.launch(android.Manifest.permission.SYSTEM_ALERT_WINDOW)
+            } else {
+                callback(true)
+            }
+        } else {
+            callback(true)
+        }
+    }
+    
+    /**
+     * 启动桌面歌词服务
+     */
+    fun startDesktopLyricService() {
+        Log.d("DesktopLyric", "startDesktopLyricService called")
+        try {
+            startService(Intent(this, DesktopLyricService::class.java))
+            Log.d("DesktopLyric", "Service started successfully")
+            
+            // 立即更新歌词
+            val lyrics = viewModel?.currentLrc
+            val index = viewModel?.currentLineIndex?.intValue ?: 0
+            Log.d("DesktopLyric", "Updating lyric: lyrics.size=${lyrics?.size ?: 0}, index=$index")
+            lyrics?.let {
+                DesktopLyricService.updateLyric(it, index)
+            }
+        } catch (e: Exception) {
+            Log.e("DesktopLyric", "启动桌面歌词服务失败", e)
+            Toast.makeText(this, "启动桌面歌词失败", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    /**
+     * 停止桌面歌词服务
+     */
+    fun stopDesktopLyricService() {
+        try {
+            stopService(Intent(this, DesktopLyricService::class.java))
+        } catch (e: Exception) {
+            Log.e("MainActivity", "停止桌面歌词服务失败", e)
+        }
+    }
+    
+    /**
+     * 检查悬浮窗权限
+     */
+    fun checkOverlayPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            android.provider.Settings.canDrawOverlays(this)
+        } else {
+            true
+        }
+    }
+}
+
+/**
+ * 切换桌面歌词开关
+ */
+fun toggleDesktopLyric(
+    context: Context,
+    vm: MusicViewModel,
+    isEnabled: androidx.compose.runtime.MutableState<Boolean>
+) {
+    Log.d("DesktopLyric", "toggleDesktopLyric called, current state: ${isEnabled.value}")
+    
+    if (isEnabled.value) {
+        // 关闭桌面歌词
+        Log.d("DesktopLyric", "Closing desktop lyric")
+        (context as? MainActivity)?.stopDesktopLyricService()
+        isEnabled.value = false
+        Toast.makeText(context, "已关闭桌面歌词", Toast.LENGTH_SHORT).show()
+        Log.d("DesktopLyric", "Desktop lyric closed")
+    } else {
+        // 开启桌面歌词
+        Log.d("DesktopLyric", "Opening desktop lyric")
+        if (context is MainActivity) {
+            Log.d("DesktopLyric", "Checking overlay permission...")
+            context.requestOverlayPermission { granted ->
+                Log.d("DesktopLyric", "Permission result: $granted")
+                if (granted) {
+                    context.startDesktopLyricService()
+                    isEnabled.value = true
+                    // 立即更新歌词
+                    DesktopLyricService.updateLyric(vm.currentLrc, vm.currentLineIndex.intValue)
+                    Toast.makeText(context, "已开启桌面歌词", Toast.LENGTH_SHORT).show()
+                    Log.d("DesktopLyric", "Desktop lyric opened successfully")
+                } else {
+                    Toast.makeText(context, "请在系统设置中开启悬浮窗权限", Toast.LENGTH_SHORT).show()
+                    Log.d("DesktopLyric", "Permission denied, cannot open lyric")
+                }
+            }
+        } else {
+            Log.d("DesktopLyric", "Context is not MainActivity")
+        }
     }
 }
 
@@ -1068,7 +1193,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                 }
                 Spacer(Modifier.height(20.dp))
                 
-                // 底部操作按钮行：将播放模式聚合按钮、收藏按钮和播放列表按钮放在一行
+                // 底部操作按钮行：将播放模式聚合按钮、收藏按钮、桌面歌词和播放列表按钮放在一行
                 Row(
                     modifier = Modifier
                         .fillMaxWidth(),
@@ -1108,6 +1233,25 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                 Color(0xFFFF4444)  // 固定使用危险红，与浅色模式一致
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant  // 未收藏时使用变体颜色
+                            }
+                        )
+                    }
+                    
+                    // 桌面歌词按钮
+                    val isLyricEnabled = remember { mutableStateOf(false) }
+                    IconButton(
+                        onClick = {
+                            toggleDesktopLyric(context, vm, isLyricEnabled)
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lyrics,
+                            contentDescription = if (isLyricEnabled.value) "关闭桌面歌词" else "开启桌面歌词",
+                            tint = if (isLyricEnabled.value) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
                             }
                         )
                     }

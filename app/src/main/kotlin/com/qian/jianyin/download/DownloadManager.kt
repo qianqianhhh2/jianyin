@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Environment
 import android.provider.DocumentsContract
+import android.util.Log
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -186,12 +187,47 @@ object DownloadManager {
      * @return 本地歌曲文件Uri，不存在则返回 null
      */
     fun getLocalSongUri(context: Context, song: Song): Uri? {
-        val customUri = if (DownloadSettingsStore.isUsingCustomPath(context)) DownloadSettingsStore.getCustomUri(context) else null
-        val songDirUri = getDirectoryUri(context, customUri, sanitizeFileName("${song.name}-${song.artist}"))
-        if (songDirUri == null) return null
+        Log.d("DownloadManager", "=== getLocalSongUri START ===")
+        Log.d("DownloadManager", "Song: ${song.name} - ${song.artist}")
         
+        val songDirName = sanitizeFileName("${song.name}-${song.artist}")
         val audioFileName = "${sanitizeFileName(song.name)}.mp3"
-        return getFileUri(context, songDirUri, audioFileName)
+        
+        // 优先尝试自定义路径（SAF）
+        if (DownloadSettingsStore.isUsingCustomPath(context)) {
+            val customUri = DownloadSettingsStore.getCustomUri(context)
+            Log.d("DownloadManager", "Trying SAF path: customUri=${customUri?.toString() ?: "null"}")
+            
+            if (customUri != null) {
+                val songDirUri = getDirectoryUri(context, customUri, songDirName)
+                if (songDirUri != null) {
+                    val result = getFileUri(context, songDirUri, audioFileName)
+                    if (result != null) {
+                        Log.d("DownloadManager", "SAF path successful: $result")
+                        Log.d("DownloadManager", "=== getLocalSongUri END (SAF) ===")
+                        return result
+                    }
+                }
+                Log.w("DownloadManager", "SAF path failed, falling back to default path")
+            }
+        }
+        
+        // 回退到默认下载目录（传统文件路径）
+        Log.d("DownloadManager", "Trying default file path")
+        val defaultDirUri = getDefaultDownloadUri(context)
+        val songDirUri = getDirectoryUri(context, defaultDirUri, songDirName)
+        if (songDirUri != null) {
+            val result = getFileUri(context, songDirUri, audioFileName)
+            if (result != null) {
+                Log.d("DownloadManager", "Default path successful: $result")
+                Log.d("DownloadManager", "=== getLocalSongUri END (default) ===")
+                return result
+            }
+        }
+        
+        Log.w("DownloadManager", "Both SAF and default paths failed")
+        Log.d("DownloadManager", "=== getLocalSongUri END (null) ===")
+        return null
     }
     
     /**
@@ -201,11 +237,29 @@ object DownloadManager {
      * @return 本地封面文件Uri，不存在则返回 null
      */
     fun getLocalCoverUri(context: Context, song: Song): Uri? {
-        val customUri = if (DownloadSettingsStore.isUsingCustomPath(context)) DownloadSettingsStore.getCustomUri(context) else null
-        val songDirUri = getDirectoryUri(context, customUri, sanitizeFileName("${song.name}-${song.artist}"))
-        if (songDirUri == null) return null
+        val songDirName = sanitizeFileName("${song.name}-${song.artist}")
+        val fileName = "cover.jpg"
         
-        return getFileUri(context, songDirUri, "cover.jpg")
+        // 优先尝试自定义路径（SAF）
+        if (DownloadSettingsStore.isUsingCustomPath(context)) {
+            val customUri = DownloadSettingsStore.getCustomUri(context)
+            if (customUri != null) {
+                val songDirUri = getDirectoryUri(context, customUri, songDirName)
+                if (songDirUri != null) {
+                    val result = getFileUri(context, songDirUri, fileName)
+                    if (result != null) return result
+                }
+            }
+        }
+        
+        // 回退到默认下载目录（传统文件路径）
+        val defaultDirUri = getDefaultDownloadUri(context)
+        val songDirUri = getDirectoryUri(context, defaultDirUri, songDirName)
+        if (songDirUri != null) {
+            return getFileUri(context, songDirUri, fileName)
+        }
+        
+        return null
     }
     
     /**
@@ -215,44 +269,74 @@ object DownloadManager {
      * @return 本地歌词文件Uri，不存在则返回 null
      */
     fun getLocalLrcUri(context: Context, song: Song): Uri? {
-        val customUri = if (DownloadSettingsStore.isUsingCustomPath(context)) DownloadSettingsStore.getCustomUri(context) else null
-        val songDirUri = getDirectoryUri(context, customUri, sanitizeFileName("${song.name}-${song.artist}"))
-        if (songDirUri == null) return null
+        val songDirName = sanitizeFileName("${song.name}-${song.artist}")
+        val fileName = "lyrics.lrc"
         
-        return getFileUri(context, songDirUri, "lyrics.lrc")
+        // 优先尝试自定义路径（SAF）
+        if (DownloadSettingsStore.isUsingCustomPath(context)) {
+            val customUri = DownloadSettingsStore.getCustomUri(context)
+            if (customUri != null) {
+                val songDirUri = getDirectoryUri(context, customUri, songDirName)
+                if (songDirUri != null) {
+                    val result = getFileUri(context, songDirUri, fileName)
+                    if (result != null) return result
+                }
+            }
+        }
+        
+        // 回退到默认下载目录（传统文件路径）
+        val defaultDirUri = getDefaultDownloadUri(context)
+        val songDirUri = getDirectoryUri(context, defaultDirUri, songDirName)
+        if (songDirUri != null) {
+            return getFileUri(context, songDirUri, fileName)
+        }
+        
+        return null
     }
     
     /**
      * 获取本地歌曲文件路径（兼容旧代码）
      * @param context 上下文
      * @param song 歌曲对象
-     * @return 本地歌曲文件路径，不存在则返回 null
+     * @return 本地歌曲文件路径（如果是SAF目录则返回content URI），不存在则返回 null
      */
     fun getLocalSongPath(context: Context, song: Song): String? {
-        val uri = getLocalSongUri(context, song)
-        return uri?.let { getPathFromUri(context, it) }
+        val uri = getLocalSongUri(context, song) ?: return null
+        return if (uri.scheme == "file") {
+            uri.path
+        } else {
+            uri.toString()
+        }
     }
     
     /**
      * 获取本地封面文件路径（兼容旧代码）
      * @param context 上下文
      * @param song 歌曲对象
-     * @return 本地封面文件路径，不存在则返回 null
+     * @return 本地封面文件路径（如果是SAF目录则返回content URI），不存在则返回 null
      */
     fun getLocalCoverPath(context: Context, song: Song): String? {
-        val uri = getLocalCoverUri(context, song)
-        return uri?.let { getPathFromUri(context, it) }
+        val uri = getLocalCoverUri(context, song) ?: return null
+        return if (uri.scheme == "file") {
+            uri.path
+        } else {
+            uri.toString()
+        }
     }
     
     /**
      * 获取本地歌词文件路径（兼容旧代码）
      * @param context 上下文
      * @param song 歌曲对象
-     * @return 本地歌词文件路径，不存在则返回 null
+     * @return 本地歌词文件路径（如果是SAF目录则返回content URI），不存在则返回 null
      */
     fun getLocalLrcPath(context: Context, song: Song): String? {
-        val uri = getLocalLrcUri(context, song)
-        return uri?.let { getPathFromUri(context, it) }
+        val uri = getLocalLrcUri(context, song) ?: return null
+        return if (uri.scheme == "file") {
+            uri.path
+        } else {
+            uri.toString()
+        }
     }
     
     /**
@@ -383,23 +467,50 @@ object DownloadManager {
      * 在目录中查找文件
      */
     private fun findFile(context: Context, parentUri: Uri, fileName: String): Uri? {
+        Log.d("DownloadManager", "findFile: parentUri=$parentUri, fileName=$fileName, scheme=${parentUri.scheme}")
+        
         // 如果是文件URI，使用传统文件方式
         if (parentUri.scheme == "file") {
+            val filePath = "${parentUri.path}/$fileName"
             val file = File(parentUri.path, fileName)
-            return if (file.exists()) Uri.fromFile(file) else null
+            val exists = file.exists()
+            Log.d("DownloadManager", "File URI mode: path=$filePath, exists=$exists")
+            return if (exists) Uri.fromFile(file) else null
         }
         
         // SAF方式
-        val docId = DocumentsContract.getTreeDocumentId(parentUri)
-        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, docId)
-        context.contentResolver.query(childrenUri, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)?.use { cursor ->
-            while (cursor.moveToNext()) {
-                val name = cursor.getString(cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME))
-                if (name == fileName) {
-                    val childDocId = cursor.getString(cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID))
-                    return DocumentsContract.buildDocumentUriUsingTree(parentUri, childDocId)
+        try {
+            // 确定正确的docId
+            val docId = if (parentUri.toString().contains("/document/")) {
+                // 这是一个document URI，提取document ID
+                val documentPath = parentUri.lastPathSegment
+                Log.d("DownloadManager", "Document URI detected, extracting docId from path segment: $documentPath")
+                documentPath ?: DocumentsContract.getTreeDocumentId(parentUri)
+            } else {
+                // 这是一个tree URI
+                DocumentsContract.getTreeDocumentId(parentUri)
+            }
+            Log.d("DownloadManager", "SAF mode: docId=$docId")
+            
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, docId)
+            Log.d("DownloadManager", "SAF mode: childrenUri=$childrenUri")
+            
+            context.contentResolver.query(childrenUri, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)?.use { cursor ->
+                Log.d("DownloadManager", "SAF mode: cursor count=${cursor.count}")
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME))
+                    Log.d("DownloadManager", "SAF mode: found item=$name")
+                    if (name == fileName) {
+                        val childDocId = cursor.getString(cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID))
+                        val resultUri = DocumentsContract.buildDocumentUriUsingTree(parentUri, childDocId)
+                        Log.d("DownloadManager", "SAF mode: match found! resultUri=$resultUri")
+                        return resultUri
+                    }
                 }
             }
+            Log.w("DownloadManager", "SAF mode: file not found - $fileName")
+        } catch (e: Exception) {
+            Log.e("DownloadManager", "SAF findFile error: ${e.message}", e)
         }
         return null
     }
@@ -445,7 +556,7 @@ object DownloadManager {
         return when {
             fileName.endsWith(".mp3", ignoreCase = true) -> "audio/mpeg"
             fileName.endsWith(".jpg", ignoreCase = true) || fileName.endsWith(".jpeg", ignoreCase = true) -> "image/jpeg"
-            fileName.endsWith(".lrc", ignoreCase = true) -> "text/plain"
+            fileName.endsWith(".lrc", ignoreCase = true) -> "application/octet-stream"  // 使用二进制类型避免自动添加.txt后缀
             fileName.endsWith(".json", ignoreCase = true) -> "application/json"
             else -> "application/octet-stream"
         }

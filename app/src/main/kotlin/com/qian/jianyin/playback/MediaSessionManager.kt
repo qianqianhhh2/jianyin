@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Build
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
@@ -496,20 +497,34 @@ class MediaSessionManager private constructor(context: Context) {
     private fun loadBitmapFromFile(filePath: String): Bitmap? {
         return try {
             Log.d("MediaSession", "尝试从本地加载封面: $filePath")
-            val file = File(filePath)
-            if (file.exists()) {
-                Log.d("MediaSession", "本地封面文件存在: ${file.absolutePath}")
-                val input = file.inputStream()
-                
-                if (filePath.lowercase().endsWith(".gif")) {
-                    decodeGifFirstFrame(input)
-                } else {
-                    BitmapFactory.decodeFile(filePath)
+            
+            val bitmap = if (filePath.startsWith("content://")) {
+                val uri = Uri.parse(filePath)
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    if (filePath.lowercase().endsWith(".gif")) {
+                        decodeGifFirstFrame(input)
+                    } else {
+                        BitmapFactory.decodeStream(input)
+                    }
                 }
             } else {
-                Log.d("MediaSession", "本地封面文件不存在: ${file.absolutePath}")
-                null
+                val file = File(filePath)
+                if (file.exists()) {
+                    Log.d("MediaSession", "本地封面文件存在: ${file.absolutePath}")
+                    val input = file.inputStream()
+                    
+                    if (filePath.lowercase().endsWith(".gif")) {
+                        decodeGifFirstFrame(input)
+                    } else {
+                        BitmapFactory.decodeFile(filePath)
+                    }
+                } else {
+                    Log.d("MediaSession", "本地封面文件不存在: ${file.absolutePath}")
+                    null
+                }
             }
+            
+            bitmap
         } catch (e: Exception) {
             Log.e("MediaSession", "加载本地封面失败", e)
             null
