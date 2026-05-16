@@ -167,8 +167,31 @@ class MainActivity : ComponentActivity() {
     var downloadPathCallback: ((Uri) -> Unit)? = null
     // 用于存储 ViewModel 引用，以便在 onActivityResult 中使用
     private var viewModel: MusicViewModel? = null
+    // 待处理的音频 URI（viewModel 初始化前收到）
+    private var pendingAudioUri: Uri? = null
     // 用于 B 站登录的 ActivityResultLauncher
     private lateinit var biliLoginLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: android.content.Intent) {
+        if (intent.action == android.content.Intent.ACTION_VIEW) {
+            val uri = intent.data
+            if (uri != null) {
+                Log.d("MainActivity", "handleIntent: 收到音频文件 intent: $uri")
+                // 无论是否设置为默认播放器，都处理外部打开请求
+                // 用户从文件管理器选择用本应用打开，就应该播放
+                if (viewModel != null) {
+                    viewModel?.playExternalAudio(uri)
+                } else {
+                    pendingAudioUri = uri
+                }
+            }
+        }
+    }
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -290,7 +313,9 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             HitokotoManager.getHitokotoAndShow(this@MainActivity)
         }
-        
+
+        handleIntent(intent)
+
         setContent {
             val context = LocalContext.current
             DownloadSettingsStore.initDarkMode(context)
@@ -334,6 +359,16 @@ class MainActivity : ComponentActivity() {
                     val vm: MusicViewModel = viewModel() // 获取 ViewModel 实例
                     // 保存 ViewModel 引用到成员变量
                     viewModel = vm
+
+                    // 处理待播放的音频 URI
+                    LaunchedEffect(Unit) {
+                        pendingAudioUri?.let { uri ->
+                            Log.d("MainActivity", "处理待播放音频: $uri")
+                            vm.playExternalAudio(uri)
+                            pendingAudioUri = null
+                        }
+                    }
+
                     // 在这里设置 MediaSessionManager 的回调
                     val mediaSessionManager = remember { MediaSessionManager.getInstance(context) }
                     

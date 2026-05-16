@@ -8,6 +8,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.DocumentsContract
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
@@ -168,6 +169,13 @@ fun MyMusicScreenV2(
     var autoCacheEnabled by remember {
         mutableStateOf(
             DownloadSettingsStore.isAutoCacheEnabled(context)
+        )
+    }
+
+    // 默认音乐打开方式设置
+    var defaultOpenerEnabled by remember {
+        mutableStateOf(
+            DownloadSettingsStore.isDefaultMusicOpenerEnabled(context)
         )
     }
 
@@ -2611,6 +2619,7 @@ fun MyMusicScreenV2(
                     SettingsItem("本地音乐歌词来源", Icons.Default.LibraryMusic, if (selectedLyricSource == 0) "内嵌" else "网络", "lyric"),
                     SettingsItem("歌曲淡入淡出", Icons.Default.GraphicEq, "播放暂停时音量渐变", "fade"),
                     SettingsItem("自动缓存", Icons.Default.Download, "根据歌曲播放次数，自动缓存歌曲", "auto_cache"),
+                    SettingsItem("默认音乐打开方式", Icons.Default.Apps, "将本应用设为默认音乐播放器", "default_opener"),
                     SettingsItem("深色模式", Icons.Default.DarkMode, when (selectedDarkMode) {
                         0 -> "跟随系统"
                         1 -> "浅色"
@@ -2727,6 +2736,18 @@ fun MyMusicScreenV2(
                                                     DownloadSettingsStore.setAutoCacheEnabled(context, enabled)
                                                 }
                                             )
+                                        } else if (item.id == "default_opener") {
+                                            Switch(
+                                                checked = defaultOpenerEnabled,
+                                                onCheckedChange = { enabled ->
+                                                    defaultOpenerEnabled = enabled
+                                                    DownloadSettingsStore.setDefaultMusicOpenerEnabled(context, enabled)
+                                                    if (enabled) {
+                                                        val intent = Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+                                                        context.startActivity(intent)
+                                                    }
+                                                }
+                                            )
                                         } else {
                                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = colorScheme.onSurfaceVariant)
                                         }
@@ -2751,6 +2772,9 @@ fun MyMusicScreenV2(
                                 )
                                 HorizontalDivider(color = colorScheme.surfaceVariant.copy(alpha = 0.3f))
                             }
+
+                            // 底部留白，与我的音乐界面保持一致
+                            Spacer(Modifier.navigationBarsPadding().height(160.dp))
                         }
                     }
                 }
@@ -3503,9 +3527,9 @@ fun MyMusicScreenV2(
                                 }
                             }
 
-                            // 底部留白
+                            // 底部留白，与我的音乐界面保持一致
                             item {
-                                Spacer(Modifier.navigationBarsPadding().height(80.dp))
+                                Spacer(Modifier.navigationBarsPadding().height(160.dp))
                             }
                         }
                     }

@@ -22,6 +22,7 @@ object DownloadSettingsStore {
     private const val KEY_DARK_MODE = "dark_mode" // 0: 跟随系统, 1: 浅色, 2: 深色
     private const val KEY_FADE_ENABLED = "fade_enabled"
     private const val KEY_AUTO_CACHE_ENABLED = "auto_cache_enabled"
+    private const val KEY_DEFAULT_MUSIC_OPENER = "default_music_opener"
     // 旧版key用于迁移
     private const val KEY_CUSTOM_PATH_OLD = "custom_download_path"
 
@@ -193,6 +194,17 @@ object DownloadSettingsStore {
     fun setAutoCacheEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_AUTO_CACHE_ENABLED, enabled)
+            .apply()
+    }
+
+    fun isDefaultMusicOpenerEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_DEFAULT_MUSIC_OPENER, false)
+    }
+
+    fun setDefaultMusicOpenerEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_DEFAULT_MUSIC_OPENER, enabled)
             .apply()
     }
 }

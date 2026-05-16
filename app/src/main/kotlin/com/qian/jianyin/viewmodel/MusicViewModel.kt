@@ -496,6 +496,22 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         // 打印当前队列状态（debug）
         printQueueStatus()
     }
+
+    fun playExternalAudio(uri: android.net.Uri) {
+        Log.d("MusicVM", "playExternalAudio: $uri")
+        Log.d("MusicVM", "URI scheme: ${uri.scheme}")
+        Log.d("MusicVM", "URI path: ${uri.path}")
+        
+        val song = Song(
+            id = "external_${System.currentTimeMillis()}",
+            name = uri.lastPathSegment ?: "外部音频",
+            artist = "未知歌手",
+            url = uri.toString(),
+            isLocal = true
+        )
+        Log.d("MusicVM", "创建外部歌曲: ${song.name}, isLocal=${song.isLocal}, url=${song.url}")
+        playSong(song, listOf(song))
+    }
     
     private fun startPlaying(song: Song, sourceList: List<Song>? = null) {
         Log.d("MusicVM", "startPlaying: ${song.name}, sourceList大小=${sourceList?.size ?: "无"}")
@@ -559,10 +575,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             if (song.isLocal) {
                 // 本地歌曲，直接使用歌曲的url作为路径
                 localSongPath = song.url
+                Log.d("MusicVM", "本地歌曲，使用URL作为路径: $localSongPath")
             } else {
                 // 网络歌曲，尝试获取本地下载路径
                 localSongPath = DownloadManager.getLocalSongPath(context, song)
                 localCoverPath = DownloadManager.getLocalCoverPath(context, song)
+                Log.d("MusicVM", "网络歌曲，本地路径: $localSongPath")
             }
             
             val mediaMetadata = MediaMetadata.Builder()
@@ -664,9 +682,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
             
             if (!song.isBiliVideo) {
+                Log.d("MusicVM", "非B站视频，准备播放: ${song.name}")
                 val playQuality = DownloadSettingsStore.getPlayQuality(context)
                 finalUrl = if (!song.isLocal && localSongPath == null && playQuality != 320) {
                     // 非本地文件且非默认音质，添加br参数
+                    Log.d("MusicVM", "非本地文件，添加音质参数: $playQuality")
                     if (song.url.contains("?")) {
                         "${song.url}&br=$playQuality"
                     } else {
@@ -676,23 +696,42 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     song.url
                 }
                 
-                val mediaItem = MediaItem.Builder()
-                    .setUri(if (localSongPath != null) {
-                        if (localSongPath.startsWith("content://") || localSongPath.startsWith("file://")) {
-                            Uri.parse(localSongPath)
-                        } else {
-                            Uri.fromFile(File(localSongPath))
-                        }
-                    } else Uri.parse(finalUrl))
-                    .setMediaMetadata(mediaMetadata)
-                    .build()
-
-                player.setMediaItem(mediaItem)
-                player.prepare()
-                player.play()
+                Log.d("MusicVM", "最终播放URL: $finalUrl")
+                Log.d("MusicVM", "localSongPath: $localSongPath")
                 
-                isPlaying.value = true
-                applyFadeIn()
+                val mediaUri = if (localSongPath != null) {
+                    if (localSongPath.startsWith("content://") || localSongPath.startsWith("file://")) {
+                        Log.d("MusicVM", "使用URI解析: $localSongPath")
+                        Uri.parse(localSongPath)
+                    } else {
+                        Log.d("MusicVM", "使用文件路径: $localSongPath")
+                        Uri.fromFile(File(localSongPath))
+                    }
+                } else {
+                    Log.d("MusicVM", "使用finalUrl: $finalUrl")
+                    Uri.parse(finalUrl)
+                }
+                
+                Log.d("MusicVM", "mediaUri: $mediaUri")
+                
+                try {
+                    val mediaItem = MediaItem.Builder()
+                        .setUri(mediaUri)
+                        .setMediaMetadata(mediaMetadata)
+                        .build()
+
+                    Log.d("MusicVM", "设置媒体项并准备播放")
+                    player.setMediaItem(mediaItem)
+                    player.prepare()
+                    player.play()
+                    
+                    isPlaying.value = true
+                    applyFadeIn()
+                    
+                    Log.d("MusicVM", "播放成功启动: ${song.name}")
+                } catch (e: Exception) {
+                    Log.e("MusicVM", "播放失败: ${song.name}", e)
+                }
                 
                 //更新媒体会话
                 mediaSessionManager.updateMetadata(
