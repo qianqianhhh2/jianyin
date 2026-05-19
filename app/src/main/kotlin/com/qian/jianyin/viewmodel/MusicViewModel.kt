@@ -77,6 +77,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     
     // --- 进度条样式 ---
     val progressBarStyle = mutableStateOf(ProgressBarStyle.DEFAULT)
+    
+    // --- 播放速度 ---
+    val playbackSpeed = mutableStateOf(1.0f)  // 当前播放速度，默认为1.0x
 
     val currentPlayingList = mutableStateListOf<Song>()   // 当前播放歌曲的来源列表
     val currentPlayingListIndex = mutableIntStateOf(-1)    // 当前歌曲在来源列表中的索引
@@ -152,6 +155,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         
         // 加载保存的进度条样式
         loadProgressBarStyle()
+        
+        // 加载保存的播放速度
+        loadPlaybackSpeed()
         
         initializeMediaSession()
         
@@ -384,6 +390,47 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         val style = ProgressBarStyle.valueOf(savedStyle ?: ProgressBarStyle.DEFAULT.name)
         progressBarStyle.value = style
         Log.d("MusicVM", "加载进度条样式: ${style}")
+    }
+    
+    // --- 播放速度控制 ---
+    
+    /**
+     * 设置播放速度
+     * @param speed 播放速度，范围 0.25f 到 4.0f（Media3限制）
+     */
+    fun setPlaybackSpeed(speed: Float) {
+        val clampedSpeed = speed.coerceIn(0.25f, 4.0f)
+        val roundedSpeed = (clampedSpeed * 10).toInt().toFloat() / 10.0f
+        playbackSpeed.value = roundedSpeed
+        player.setPlaybackSpeed(roundedSpeed)
+        savePlaybackSpeed(roundedSpeed)
+        Log.d("MusicVM", "设置播放速度: ${roundedSpeed}x")
+    }
+    
+    /**
+     * 获取当前播放速度
+     */
+    fun getPlaybackSpeed(): Float {
+        return playbackSpeed.value
+    }
+    
+    /**
+     * 保存播放速度到SharedPreferences
+     */
+    private fun savePlaybackSpeed(speed: Float) {
+        val sharedPreferences = getApplication<Application>().getSharedPreferences("music_player_prefs", Context.MODE_PRIVATE)
+        sharedPreferences.edit().putFloat("playback_speed", speed).apply()
+    }
+    
+    /**
+     * 从SharedPreferences加载播放速度
+     */
+    private fun loadPlaybackSpeed() {
+        val sharedPreferences = getApplication<Application>().getSharedPreferences("music_player_prefs", Context.MODE_PRIVATE)
+        val savedSpeed = sharedPreferences.getFloat("playback_speed", 1.0f)
+        playbackSpeed.value = savedSpeed
+        player.setPlaybackSpeed(savedSpeed)
+        Log.d("MusicVM", "加载播放速度: ${savedSpeed}x")
     }
     
         /**

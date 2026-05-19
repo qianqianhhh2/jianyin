@@ -35,6 +35,8 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -68,6 +70,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -1050,15 +1054,18 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
     var showMoreMenu by remember { mutableStateOf(false) }
     var showProgressBarStyleDialog by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
+    var showPlaybackSpeedDialog by remember { mutableStateOf(false) }
     var isDownloading by remember { mutableStateOf(false) }
     var sleepTimerTime by remember { mutableStateOf("23:00") }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
     // 处理返回键，优先关闭弹出的菜单
-    BackHandler(showMoreMenu || showQueue) {
+    BackHandler(showMoreMenu || showQueue || showPlaybackSpeedDialog) {
         if (showMoreMenu) {
             showMoreMenu = false
+        } else if (showPlaybackSpeedDialog) {
+            showPlaybackSpeedDialog = false
         } else if (showQueue) {
             showQueue = false
         }
@@ -1664,6 +1671,48 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                 text = "定时关闭",
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.weight(1f)
+                            )
+                            Icon(
+                                Icons.Default.ArrowForwardIos,
+                                null,
+                                tint = MaterialTheme.colorScheme.onSurface.copy(0.5f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                    Divider(color = MaterialTheme.colorScheme.onSurface.copy(0.2f))
+                    
+                    // 播放速度选项
+                    Spacer(Modifier.height(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showPlaybackSpeedDialog = true
+                                showMoreMenu = false
+                            }
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Speed,
+                                null,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(Modifier.width(16.dp))
+                            Text(
+                                text = "播放速度",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = "${String.format("%.1f", vm.playbackSpeed.value)}x",
+                                color = MaterialTheme.colorScheme.onSurface.copy(0.7f),
+                                fontSize = 14.sp
                             )
                             Icon(
                                 Icons.Default.ArrowForwardIos,
@@ -2371,6 +2420,119 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
             confirmButton = {
                 TextButton(onClick = { showProgressBarStyleDialog = false }) {
                     Text("确定")
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    }
+    
+    // 播放速度调节弹窗
+    if (showPlaybackSpeedDialog) {
+        val currentSpeed = remember { mutableStateOf(vm.playbackSpeed.value) }
+        AlertDialog(
+            onDismissRequest = { showPlaybackSpeedDialog = false },
+            title = { Text("播放速度") },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // 速度显示和滑块
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${String.format("%.1f", currentSpeed.value)}x",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    
+                    // 滑块
+                    val context = LocalContext.current
+                    val vibrator = remember { context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator }
+                    Slider(
+                        value = currentSpeed.value,
+                        onValueChange = { 
+                            currentSpeed.value = (it * 10).toInt().toFloat() / 10.0f
+                            // 微小震动反馈
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                vibrator.vibrate(VibrationEffect.createOneShot(5, VibrationEffect.DEFAULT_AMPLITUDE))
+                            } else {
+                                @Suppress("DEPRECATION")
+                                vibrator.vibrate(5)
+                            }
+                        },
+                        valueRange = 0.25f..4.0f,
+                        steps = 37, // 0.25 到 4.0，每0.1一个刻度，共38个点，steps=37
+                        onValueChangeFinished = {
+                            vm.setPlaybackSpeed(currentSpeed.value)
+                        },
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                            inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(0.3f)
+                        )
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    
+                    // 速度范围提示
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("0.25x", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(0.5f))
+                        Text("4.0x", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(0.5f))
+                    }
+                    Spacer(Modifier.height(24.dp))
+                    
+                    // 快捷速度按钮
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        listOf(0.5f, 1.0f, 1.5f).forEach { speed ->
+                            Surface(
+                                onClick = {
+                                    currentSpeed.value = speed
+                                    vm.setPlaybackSpeed(speed)
+                                },
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (currentSpeed.value == speed) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    if (isSystemInDarkTheme()) Color(0xFF2D3748) else Color(0xFFE3EAF6)
+                                },
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = "${speed}x",
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                    fontSize = 13.sp,
+                                    color = if (currentSpeed.value == speed) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPlaybackSpeedDialog = false }) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    // 恢复默认速度
+                    currentSpeed.value = 1.0f
+                    vm.setPlaybackSpeed(1.0f)
+                    showPlaybackSpeedDialog = false
+                }) {
+                    Text("重置")
                 }
             },
             containerColor = MaterialTheme.colorScheme.surface
