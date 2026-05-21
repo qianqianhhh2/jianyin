@@ -23,6 +23,8 @@ object DownloadSettingsStore {
     private const val KEY_FADE_ENABLED = "fade_enabled"
     private const val KEY_AUTO_CACHE_ENABLED = "auto_cache_enabled"
     private const val KEY_DEFAULT_MUSIC_OPENER = "default_music_opener"
+    private const val KEY_KEEP_PLAYLIST_ON_EXIT = "keep_playlist_on_exit"    // 离开后保留列表
+    private const val KEY_AUTO_PLAY_ON_START = "auto_play_on_start"            // 启动时播放
     // 旧版key用于迁移
     private const val KEY_CUSTOM_PATH_OLD = "custom_download_path"
 
@@ -205,6 +207,42 @@ object DownloadSettingsStore {
     fun setDefaultMusicOpenerEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_DEFAULT_MUSIC_OPENER, enabled)
+            .apply()
+    }
+
+    // ========== 启动设置相关 ==========
+
+    /**
+     * 获取离开后保留列表设置
+     */
+    fun isKeepPlaylistOnExitEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_KEEP_PLAYLIST_ON_EXIT, false)
+    }
+
+    /**
+     * 设置离开后保留列表
+     */
+    fun setKeepPlaylistOnExitEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_KEEP_PLAYLIST_ON_EXIT, enabled)
+            .apply()
+    }
+
+    /**
+     * 获取启动时播放设置
+     */
+    fun isAutoPlayOnStartEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AUTO_PLAY_ON_START, false)
+    }
+
+    /**
+     * 设置启动时播放
+     */
+    fun setAutoPlayOnStartEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_AUTO_PLAY_ON_START, enabled)
             .apply()
     }
 }

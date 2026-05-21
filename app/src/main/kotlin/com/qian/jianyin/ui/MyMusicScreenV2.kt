@@ -187,6 +187,19 @@ fun MyMusicScreenV2(
         )
     } // 0: 跟随系统, 1: 浅色, 2: 深色
 
+    // 启动设置相关状态
+    var showStartupSettingsDialog by remember { mutableStateOf(false) }
+    var keepPlaylistOnExitEnabled by remember {
+        mutableStateOf(
+            DownloadSettingsStore.isKeepPlaylistOnExitEnabled(context)
+        )
+    }
+    var autoPlayOnStartEnabled by remember {
+        mutableStateOf(
+            DownloadSettingsStore.isAutoPlayOnStartEnabled(context)
+        )
+    }
+
     // 版本检查相关状态
     var isCheckingUpdate by remember { mutableStateOf(false) }
     var showVersionUpdateDialog by remember { mutableStateOf(false) }
@@ -2620,6 +2633,7 @@ fun MyMusicScreenV2(
                     SettingsItem("歌曲淡入淡出", Icons.Default.GraphicEq, "播放暂停时音量渐变", "fade"),
                     SettingsItem("自动缓存", Icons.Default.Download, "根据歌曲播放次数，自动缓存歌曲", "auto_cache"),
                     SettingsItem("默认音乐打开方式", Icons.Default.Apps, "将本应用设为默认音乐播放器", "default_opener"),
+                    SettingsItem("启动设置", Icons.Default.Power, "控制应用启动时的播放行为", "startup"),
                     SettingsItem("深色模式", Icons.Default.DarkMode, when (selectedDarkMode) {
                         0 -> "跟随系统"
                         1 -> "浅色"
@@ -2765,6 +2779,7 @@ fun MyMusicScreenV2(
                                                 selectedDarkMode = DownloadSettingsStore.getDarkMode(context)
                                                 showDarkModeDialog = true
                                             }
+                                            "startup" -> showStartupSettingsDialog = true
                                             "backup" -> showBackupDialog = true
                                             "about" -> showAboutScreen = true
                                         }
@@ -3109,6 +3124,89 @@ fun MyMusicScreenV2(
                 )
             }
 
+            // 启动设置对话框
+            if (showStartupSettingsDialog) {
+                AlertDialog(
+                    onDismissRequest = { showStartupSettingsDialog = false },
+                    title = { Text("启动设置") },
+                    text = {
+                        Column {
+                            // 离开后保留列表
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("离开后保留列表")
+                                    Text(
+                                        "保留当前播放队列，下次打开应用时恢复",
+                                        fontSize = 12.sp,
+                                        color = colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = keepPlaylistOnExitEnabled,
+                                    onCheckedChange = { enabled ->
+                                        keepPlaylistOnExitEnabled = enabled
+                                        DownloadSettingsStore.setKeepPlaylistOnExitEnabled(context, enabled)
+                                        // 如果关闭保留列表，同时关闭启动时播放
+                                        if (!enabled && autoPlayOnStartEnabled) {
+                                            autoPlayOnStartEnabled = false
+                                            DownloadSettingsStore.setAutoPlayOnStartEnabled(context, false)
+                                        }
+                                    }
+                                )
+                            }
+
+                            HorizontalDivider(color = colorScheme.surfaceVariant.copy(alpha = 0.3f))
+
+                            // 启动时播放
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("启动时播放")
+                                    Text(
+                                        "打开应用后自动播放上次的歌曲",
+                                        fontSize = 12.sp,
+                                        color = if (keepPlaylistOnExitEnabled) colorScheme.onSurfaceVariant else Color.Gray
+                                    )
+                                }
+                                Switch(
+                                    checked = autoPlayOnStartEnabled,
+                                    onCheckedChange = { enabled ->
+                                        if (keepPlaylistOnExitEnabled) {
+                                            autoPlayOnStartEnabled = enabled
+                                            DownloadSettingsStore.setAutoPlayOnStartEnabled(context, enabled)
+                                        }
+                                    },
+                                    enabled = keepPlaylistOnExitEnabled
+                                )
+                            }
+
+                            // 提示信息
+                            if (!keepPlaylistOnExitEnabled) {
+                                Text(
+                                    "提示：需要先开启「离开后保留列表」才能使用此功能",
+                                    fontSize = 12.sp,
+                                    color = colorScheme.error,
+                                    modifier = Modifier.padding(top = 8.dp)
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showStartupSettingsDialog = false
+                        }) {
+                            Text("确定")
+                        }
+                    },
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            }
+
             // 全屏关于界面
             AnimatedVisibility(
                 visible = showAboutScreen,
@@ -3255,84 +3353,30 @@ fun MyMusicScreenV2(
                                     modifier = Modifier.padding(bottom = 16.dp)
                                 )
 
-                                // 主要开发者卡片
-                                Surface(
-                                    onClick = {},
-                                    shape = RoundedCornerShape(16.dp),
-                                    modifier = Modifier.fillMaxWidth(),
-                                    color = colorScheme.surfaceColorAtElevation(2.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        // 开发者头像
-                                        Box(
-                                            modifier = Modifier
-                                                .size(60.dp)
-                                                .clip(CircleShape)
-                                                .background(colorScheme.primary.copy(alpha = 0.1f)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Image(
-                                                painter = painterResource(id = R.drawable.dev_icon), // 您的图片名称
-                                                contentDescription = "开发者头像",
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .clip(CircleShape)
-                                            )
-                                        }
+                                // 可左右滑动的开发者列表
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    // 开发者1：谦谦TWT
+                                    item {
+                                        DeveloperCard(
+                                            avatarRes = R.drawable.dev_icon,
+                                            name = "谦谦TWT",
+                                            role = "主要开发者",
+                                            description = "miku到底是蓝的还是绿的呢",
+                                            githubUrl = "https://github.com/qianqianhhh2"
+                                        )
+                                    }
 
-                                        Column(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .padding(start = 16.dp)
-                                        ) {
-                                            Text(
-                                                "谦谦TWT",
-                                                color = colorScheme.onBackground,
-                                                fontSize = 18.sp,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                            Text(
-                                                "主要开发者",
-                                                color = colorScheme.onSurfaceVariant,
-                                                fontSize = 13.sp
-                                            )
-                                            Text(
-                                                "miku到底是蓝的还是绿的呢",
-                                                color = colorScheme.onSurfaceVariant,
-                                                fontSize = 13.sp
-                                            )
-                                        }
-
-                                        // GitHub 图标
-                                        IconButton(
-                                            onClick = {
-                                                val intent = Intent(
-                                                    Intent.ACTION_VIEW,
-                                                    Uri.parse("https://github.com/qianqianhhh2")
-                                                )
-                                                context.startActivity(intent)
-                                            },
-                                            modifier = Modifier.size(40.dp)
-                                        ) {
-                                            Image(
-                                                painter = painterResource(id = R.drawable.github), // 您的图片名称
-                                                contentDescription = "GitHub",
-                                                contentScale = ContentScale.Fit,
-                                                modifier = Modifier.size(24.dp)
-                                            )
-                                        }
+                                    // 开发者2
+                                    item {
+                                        DeveloperCard(
+                                            avatarRes = R.drawable.fairy,
+                                            name = "Fairy",
+                                            role = "主要编码",
+                                            description = "中二病犯了用LLM做的智能体",
+                                            githubUrl = null
+                                        )
                                     }
                                 }
-
-                                Spacer(Modifier.height(12.dp))
-
-
 
                                 Spacer(Modifier.height(24.dp))
                             }
@@ -3672,6 +3716,99 @@ fun MyMusicScreenV2(
                 },
                 containerColor = MaterialTheme.colorScheme.surface
             )
+        }
+    }
+}
+
+@Composable
+fun DeveloperCard(
+    avatarRes: Int,
+    name: String,
+    role: String,
+    description: String,
+    githubUrl: String?
+) {
+    val context = LocalContext.current
+    val colorScheme = MaterialTheme.colorScheme
+
+    Surface(
+        onClick = {
+            if (githubUrl != null) {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(githubUrl))
+                context.startActivity(intent)
+            }
+        },
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.width(300.dp),
+        color = colorScheme.surfaceColorAtElevation(2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(60.dp)
+                    .clip(CircleShape)
+                    .background(colorScheme.primary.copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(id = avatarRes),
+                    contentDescription = "$name 头像",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape)
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 16.dp)
+            ) {
+                Text(
+                    name,
+                    color = colorScheme.onBackground,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
+                Text(
+                    role,
+                    color = colorScheme.primary,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(top = 2.dp),
+                    maxLines = 1
+                )
+                Text(
+                    description,
+                    color = colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 4.dp),
+                    maxLines = 1
+                )
+            }
+
+            if (githubUrl != null) {
+                IconButton(
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(githubUrl))
+                        context.startActivity(intent)
+                    },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.github),
+                        contentDescription = "GitHub",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
         }
     }
 }

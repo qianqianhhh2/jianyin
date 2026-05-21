@@ -59,6 +59,19 @@ data class Song(
 data class LrcLine(val time: Long, val text: String)
 
 /**
+ * 播放状态数据类
+ * 用于保存和恢复播放队列状态
+ * @property songs 播放队列中的歌曲列表
+ * @property currentIndex 当前播放歌曲的索引
+ * @property timestamp 保存时间戳
+ */
+data class PlaybackState(
+    val songs: List<Song>,
+    val currentIndex: Int,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+/**
  * Meting API 接口
  * 用于与 Meting API 进行交互，获取歌曲和歌词数据
  */

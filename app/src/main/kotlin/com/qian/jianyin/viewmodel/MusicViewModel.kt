@@ -159,6 +159,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         // 加载保存的播放速度
         loadPlaybackSpeed()
         
+        // 恢复播放状态（仅在开启"离开后保留列表"时）
+        restorePlaybackStateOnStartup()
+        
         initializeMediaSession()
         
         player.addListener(object : Player.Listener {
@@ -604,6 +607,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             historyList.removeAt(0)
         }
         saveHistory()
+        
+        // 保存播放状态（用于恢复）
+        updatePlaybackStateOnPlay()
         
         // 记录播放次数
         val statsManager = MusicStatsManager(getApplication())
@@ -1497,6 +1503,310 @@ fun togglePlay() {
         Log.d("MusicVM", "当前歌曲: ${currentSong.value?.name ?: "无"}")
         Log.d("MusicVM", "播放模式: ${playMode.value}")
         Log.d("MusicVM", "==================")
+    }
+
+    // ========== 播放状态保存与恢复 ==========
+
+    /**
+     * 保存播放状态
+     * 在播放歌曲时调用，记录当前播放队列状态
+     */
+    private fun savePlaybackState() {
+        val context = getApplication<Application>()
+        
+        // 仅在开启"离开后保留列表"时保存
+        if (!DownloadSettingsStore.isKeepPlaylistOnExitEnabled(context)) {
+            return
+        }
+        
+        if (playQueue.isNotEmpty()) {
+            val state = PlaybackState(
+                songs = playQueue.toList(),
+                currentIndex = currentQueueIndex.intValue
+            )
+            PlaybackStateStore.savePlaybackState(context, state)
+            Log.d("MusicVM", "播放状态已保存: ${playQueue.size}首歌曲, 当前索引: ${currentQueueIndex.intValue}")
+        }
+    }
+
+    /**
+     * 在启动时恢复播放状态
+     */
+    private fun restorePlaybackStateOnStartup() {
+        val context = getApplication<Application>()
+        
+        // 仅在开启"离开后保留列表"时恢复
+        if (!DownloadSettingsStore.isKeepPlaylistOnExitEnabled(context)) {
+            Log.d("MusicVM", "未开启离开后保留列表，跳过状态恢复")
+            return
+        }
+        
+        val savedState = PlaybackStateStore.loadPlaybackState(context)
+        if (savedState != null && savedState.songs.isNotEmpty()) {
+            Log.d("MusicVM", "恢复播放状态: ${savedState.songs.size}首歌曲, 当前索引: ${savedState.currentIndex}")
+            
+            // 恢复播放队列
+            playQueue.clear()
+            playQueue.addAll(savedState.songs)
+            
+            // 恢复当前播放索引
+            val validIndex = savedState.currentIndex.coerceIn(0, playQueue.size - 1)
+            currentQueueIndex.intValue = validIndex
+            
+            // 恢复当前歌曲状态
+            val currentSongData = playQueue.getOrNull(validIndex)
+            if (currentSongData != null) {
+                currentSong.value = currentSongData
+                
+                // 检查是否需要自动播放
+                val autoPlay = DownloadSettingsStore.isAutoPlayOnStartEnabled(context)
+                if (autoPlay) {
+                    Log.d("MusicVM", "开启了启动时播放，开始播放")
+                    startPlaying(currentSongData, playQueue)
+                } else {
+                    Log.d("MusicVM", "未开启启动时播放，恢复状态但不播放（暂停状态）")
+                    // 恢复状态但不播放（暂停状态），但需要加载歌曲数据
+                    restorePlaybackStateWithoutPlaying(currentSongData, playQueue)
+                }
+            }
+        } else {
+            Log.d("MusicVM", "没有保存的播放状态")
+        }
+    }
+    
+    /**
+     * 恢复播放状态但不播放（暂停状态），但加载好歌曲数据（歌词、封面等）
+     */
+    private fun restorePlaybackStateWithoutPlaying(song: Song, sourceList: List<Song>) {
+        Log.d("MusicVM", "恢复状态但不播放，加载歌曲数据: ${song.name}")
+        
+        // 清空歌词和状态
+        currentLrc.clear()
+        currentLineIndex.intValue = 0
+        currentPosition.longValue = 0L
+        totalDuration.longValue = 0L
+        
+        // 记录来源列表和索引
+        if (sourceList.isNotEmpty()) {
+            currentPlayingList.clear()
+            currentPlayingList.addAll(sourceList)
+            val indexInSource = sourceList.indexOfFirst { isSameSong(it, song) }
+            currentPlayingListIndex.intValue = if (indexInSource != -1) indexInSource else 0
+            Log.d("MusicVM", "已记录来源列表，大小=${currentPlayingList.size}, 歌曲索引=${currentPlayingListIndex.intValue}")
+        }
+        
+        // 设置为暂停状态
+        isPlaying.value = false
+        
+        val context = getApplication<Application>()
+        
+        // 配置播放器（但不播放）
+        try {
+            var localSongPath: String? = null
+            var localCoverPath: String? = null
+            
+            if (song.isLocal) {
+                localSongPath = song.url
+                Log.d("MusicVM", "本地歌曲，使用URL作为路径: $localSongPath")
+            } else {
+                localSongPath = DownloadManager.getLocalSongPath(context, song)
+                localCoverPath = DownloadManager.getLocalCoverPath(context, song)
+                Log.d("MusicVM", "网络歌曲，本地路径: $localSongPath")
+            }
+            
+            val mediaMetadata = MediaMetadata.Builder()
+                .setTitle(song.name)
+                .setArtist(song.artist)
+                .setArtworkUri(if (localCoverPath != null) {
+                    if (localCoverPath.startsWith("content://") || localCoverPath.startsWith("file://")) {
+                        Uri.parse(localCoverPath)
+                    } else {
+                        Uri.fromFile(File(localCoverPath))
+                    }
+                } else Uri.parse(song.pic))
+                .build()
+            
+            var finalUrl = song.url
+            
+            if (song.isBiliVideo) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    var localPath = localSongPath
+                    if (localPath == null) {
+                        // 从网络获取音频流
+                        try {
+                            val streamInfo = biliApi.getBestAudioStream(song.bvid, song.cid)
+                            if (streamInfo != null && streamInfo.url.isNotEmpty()) {
+                                finalUrl = streamInfo.url
+                            }
+                        } catch (e: Exception) {
+                            Log.e("MusicVM", "获取B站音频流失败", e)
+                        }
+                    }
+                    
+                    val mediaUri = if (localPath != null) {
+                        if (localPath.startsWith("content://") || localPath.startsWith("file://")) {
+                            Uri.parse(localPath)
+                        } else {
+                            Uri.fromFile(File(localPath))
+                        }
+                    } else {
+                        Uri.parse(finalUrl)
+                    }
+                    
+                    // 播放器操作必须在主线程执行
+                    withContext(Dispatchers.Main) {
+                        try {
+                            val mediaItem = MediaItem.Builder()
+                                .setUri(mediaUri)
+                                .setMediaMetadata(mediaMetadata)
+                                .build()
+                            
+                            player.setMediaItem(mediaItem)
+                            player.prepare()
+                            
+                            Log.d("MusicVM", "播放器已准备好（暂停状态）: ${song.name}")
+                        } catch (e: Exception) {
+                            Log.e("MusicVM", "播放器准备失败: ${song.name}", e)
+                        }
+                        
+                        mediaSessionManager.updateMetadata(
+                            title = song.name,
+                            artist = song.artist,
+                            album = "专辑",
+                            duration = 0L,
+                            artworkUrl = localCoverPath ?: song.pic
+                        )
+                        mediaSessionManager.updatePlaybackState(false, 0L)
+                    }
+                }
+            } else {
+                val mediaUri = if (localSongPath != null) {
+                    if (localSongPath.startsWith("content://") || localSongPath.startsWith("file://")) {
+                        Uri.parse(localSongPath)
+                    } else {
+                        Uri.fromFile(File(localSongPath))
+                    }
+                } else {
+                    Uri.parse(finalUrl)
+                }
+                
+                try {
+                    val mediaItem = MediaItem.Builder()
+                        .setUri(mediaUri)
+                        .setMediaMetadata(mediaMetadata)
+                        .build()
+                    
+                    player.setMediaItem(mediaItem)
+                    player.prepare()
+                    
+                    Log.d("MusicVM", "播放器已准备好（暂停状态）: ${song.name}")
+                } catch (e: Exception) {
+                    Log.e("MusicVM", "播放器准备失败: ${song.name}", e)
+                }
+                
+                mediaSessionManager.updateMetadata(
+                    title = song.name,
+                    artist = song.artist,
+                    album = "专辑",
+                    duration = 0L,
+                    artworkUrl = localCoverPath ?: song.pic
+                )
+                mediaSessionManager.updatePlaybackState(false, 0L)
+            }
+            
+        } catch (e: Exception) {
+            Log.e("MusicVM", "恢复状态初始化错误", e)
+        }
+        
+        // 异步加载歌词
+        viewModelScope.launch {
+            try {
+                var lrcContent = ""
+                
+                if (song.isLocal) {
+                    val customLyrics = SongCustomDataStore.getLyrics(context, song.url)
+                    if (customLyrics.isNotEmpty()) {
+                        lrcContent = customLyrics
+                    } else {
+                        val lyricSource = DownloadSettingsStore.getLyricSource(context)
+                        if (lyricSource == 0) {
+                            val localMusicManager = LocalMusicManager(context)
+                            val lyrics = localMusicManager.extractLyrics(song.url)
+                            if (!lyrics.isNullOrEmpty()) {
+                                lrcContent = lyrics
+                            }
+                        } else {
+                            lrcContent = fetchNetworkLyrics(song.name, song.artist)
+                        }
+                    }
+                } else {
+                    val customLyrics = SongCustomDataStore.getLyrics(context, song.url)
+                    if (customLyrics.isNotEmpty()) {
+                        lrcContent = customLyrics
+                    } else {
+                        val localLrcPath = DownloadManager.getLocalLrcPath(context, song)
+                        lrcContent = if (localLrcPath != null) {
+                            if (localLrcPath.startsWith("content://")) {
+                                context.contentResolver.openInputStream(Uri.parse(localLrcPath))?.bufferedReader()?.use { it.readText() } ?: ""
+                            } else {
+                                File(localLrcPath).readText()
+                            }
+                        } else if (!song.lrc.isNullOrEmpty()) {
+                            if (song.lrc.startsWith("http")) api.getLrcByUrl(song.lrc)
+                            else api.getLrcById(id = song.id)
+                        } else ""
+                    }
+                }
+                
+                currentLrc.clear()
+                if (lrcContent.isNotEmpty()) {
+                    currentLrc.addAll(parseLrc(lrcContent))
+                } else {
+                    currentLrc.add(LrcLine(0, "暂无歌词"))
+                }
+            } catch (e: Exception) {
+                currentLrc.clear()
+                currentLrc.add(LrcLine(0, "暂无歌词"))
+            }
+        }
+        
+        // 应用自定义封面
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (!song.isLocal) {
+                    val customCover = SongCustomDataStore.getCover(context, song.url)
+                    if (customCover.isNotEmpty()) {
+                        // 更新当前歌曲的封面
+                        val updatedSong = song.copy(pic = customCover)
+                        currentSong.value = updatedSong
+                        // 更新播放队列中的歌曲
+                        val index = playQueue.indexOfFirst { isSameSong(it, song) }
+                        if (index != -1) {
+                            playQueue[index] = updatedSong
+                        }
+                        Log.d("MusicVM", "应用自定义封面")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MusicVM", "加载封面失败", e)
+            }
+        }
+    }
+
+    /**
+     * 清除保存的播放状态
+     */
+    fun clearSavedPlaybackState() {
+        val context = getApplication<Application>()
+        PlaybackStateStore.clearPlaybackState(context)
+        Log.d("MusicVM", "已清除保存的播放状态")
+    }
+
+    /**
+     * 更新播放状态保存（在播放新歌曲时自动调用）
+     */
+    fun updatePlaybackStateOnPlay() {
+        savePlaybackState()
     }
 
     override fun onCleared() {
