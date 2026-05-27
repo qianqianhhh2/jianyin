@@ -86,10 +86,16 @@ fun SectionHeaderV6(title: String, icon: androidx.compose.ui.graphics.vector.Ima
     }
 }
 
+private fun getRandomPlaceholderId(): Int {
+    val ids = listOf(R.drawable.miku_1, R.drawable.miku_2, R.drawable.miku_3, R.drawable.miku_4, R.drawable.miku_5, R.drawable.miku_6, R.drawable.miku_7, R.drawable.miku_8, R.drawable.miku_9)
+    return ids.random()
+}
+
 @Composable
 fun SongItemV6(song: Song, cs: ColorScheme, onClick: () -> Unit) {
+    val mikuPainter = painterResource(id = getRandomPlaceholderId())
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(model = song.pic, contentDescription = null, modifier = Modifier.size(54.dp).clip(RoundedCornerShape(10.dp)).background(cs.surfaceVariant), contentScale = ContentScale.Crop)
+        AsyncImage(model = song.pic, contentDescription = null, modifier = Modifier.size(54.dp).clip(RoundedCornerShape(10.dp)).background(cs.surfaceVariant), contentScale = ContentScale.Crop, error = mikuPainter)
         Column(Modifier.padding(start = 16.dp).weight(1f)) {
             Text(song.name, color = cs.onBackground, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(song.artist, color = cs.onSurfaceVariant, fontSize = 13.sp)
@@ -100,8 +106,9 @@ fun SongItemV6(song: Song, cs: ColorScheme, onClick: () -> Unit) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PlaylistItemV6(playlist: UserSyncedPlaylist, colorScheme: ColorScheme, onClick: () -> Unit, onLongClick: () -> Unit) {
+    val mikuPainter = painterResource(id = getRandomPlaceholderId())
     Row(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(model = playlist.coverPic, contentDescription = null, modifier = Modifier.size(54.dp).clip(RoundedCornerShape(10.dp)).background(colorScheme.surfaceVariant), contentScale = ContentScale.Crop)
+        AsyncImage(model = playlist.coverPic, contentDescription = null, modifier = Modifier.size(54.dp).clip(RoundedCornerShape(10.dp)).background(colorScheme.surfaceVariant), contentScale = ContentScale.Crop, error = mikuPainter)
         Column(Modifier.padding(start = 16.dp).weight(1f)) {
             Text(playlist.name, color = colorScheme.onBackground, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${playlist.songs.size} 首歌曲", color = colorScheme.onSurfaceVariant, fontSize = 13.sp)
@@ -400,7 +407,8 @@ fun MyMusicScreenV2(
                                             .clip(RoundedCornerShape(16.dp))
                                             .background(colorScheme.surfaceVariant)
                                             .hazeSource(itemHazeState),
-                                        contentScale = ContentScale.Crop
+                                        contentScale = ContentScale.Crop,
+                                        error = painterResource(id = getRandomPlaceholderId())
                                     )
                                     Box(
                                         modifier = Modifier
@@ -474,7 +482,8 @@ fun MyMusicScreenV2(
                                             )
                                         )
                                         .hazeSource(itemHazeState),
-                                    contentScale = ContentScale.Crop
+                                    contentScale = ContentScale.Crop,
+                                    error = painterResource(id = getRandomPlaceholderId())
                                 )
                                 Box(
                                     modifier = Modifier
@@ -1572,7 +1581,8 @@ fun MyMusicScreenV2(
                                                             .size(48.dp)
                                                             .clip(RoundedCornerShape(8.dp))
                                                             .background(colorScheme.surfaceVariant),
-                                                        contentScale = ContentScale.Crop
+                                                        contentScale = ContentScale.Crop,
+                                                        error = painterResource(id = getRandomPlaceholderId())
                                                     )
                                                 },
                                                 modifier = Modifier.clickable {
@@ -1727,7 +1737,8 @@ fun MyMusicScreenV2(
                                                     .size(240.dp)
                                                     .clip(RoundedCornerShape(28.dp))
                                                     .background(colorScheme.surfaceVariant),
-                                                contentScale = ContentScale.Crop
+                                                contentScale = ContentScale.Crop,
+                                                error = painterResource(id = getRandomPlaceholderId())
                                             )
                                         }
                                     }
@@ -1877,7 +1888,8 @@ fun MyMusicScreenV2(
                                                     .size(52.dp)
                                                     .clip(RoundedCornerShape(10.dp))
                                                     .background(colorScheme.surfaceVariant),
-                                                contentScale = ContentScale.Crop
+                                                contentScale = ContentScale.Crop,
+                                                error = painterResource(id = getRandomPlaceholderId())
                                             )
                                             Column(
                                                 Modifier.padding(start = if (isSelectionMode) 12.dp else 16.dp)
@@ -2452,7 +2464,8 @@ fun MyMusicScreenV2(
                                                 .size(52.dp)
                                                 .clip(RoundedCornerShape(10.dp))
                                                 .background(colorScheme.surfaceVariant),
-                                            contentScale = ContentScale.Crop
+                                            contentScale = ContentScale.Crop,
+                                            error = painterResource(id = getRandomPlaceholderId())
                                         )
                                         Column(Modifier.padding(start = 16.dp).weight(1f)) {
                                             Text(

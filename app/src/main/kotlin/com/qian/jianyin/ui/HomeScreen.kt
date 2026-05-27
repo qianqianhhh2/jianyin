@@ -48,6 +48,11 @@ import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 
+private fun getRandomPlaceholderId(): Int {
+    val ids = listOf(R.drawable.miku_1, R.drawable.miku_2, R.drawable.miku_3, R.drawable.miku_4, R.drawable.miku_5, R.drawable.miku_6, R.drawable.miku_7, R.drawable.miku_8, R.drawable.miku_9)
+    return ids.random()
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class, ExperimentalHazeApi::class)
 @Composable
 fun HomeScreen(
@@ -131,7 +136,8 @@ fun HomeScreen(
                                 .clip(RoundedCornerShape(18.dp))
                                 .background(if (isDarkMode) Color(0xFF2D3748) else Color(0xFFE3EAF6))
                                 .hazeSource(itemHazeState), 
-                            contentScale = ContentScale.Crop
+                            contentScale = ContentScale.Crop,
+                            error = painterResource(id = getRandomPlaceholderId())
                         )
                         Box(
                             modifier = Modifier
@@ -243,7 +249,8 @@ fun HomeScreen(
                                             else 
                                                 Color(0xFFFFFEFE)
                                         ), 
-                                    contentScale = ContentScale.Crop
+                                    contentScale = ContentScale.Crop,
+                                    error = painterResource(id = getRandomPlaceholderId())
                                 )
                                 Column(modifier = Modifier.padding(end = 12.dp).weight(1f)) {
                                     Text(
@@ -373,7 +380,8 @@ AnimatedContent(
                                         .size(240.dp)
                                         .clip(RoundedCornerShape(28.dp))
                                         .background(colorScheme.surfaceVariant), 
-                                    contentScale = ContentScale.Crop
+                                    contentScale = ContentScale.Crop,
+                                    error = painterResource(id = getRandomPlaceholderId())
                                 )
                             }
                         }
@@ -465,7 +473,8 @@ AnimatedContent(
                                         .size(52.dp)
                                         .clip(RoundedCornerShape(10.dp))
                                         .background(colorScheme.surfaceVariant),
-                                    contentScale = ContentScale.Crop
+                                    contentScale = ContentScale.Crop,
+                                    error = painterResource(id = getRandomPlaceholderId())
                                 )
                                 Column(Modifier.padding(start = if (isSelectionMode) 12.dp else 16.dp).weight(1f)) {
                                     Text(song.name, color = colorScheme.onBackground, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -523,7 +532,8 @@ AnimatedContent(
                                                 .size(48.dp)
                                                 .clip(RoundedCornerShape(8.dp))
                                                 .background(colorScheme.surfaceVariant),
-                                            contentScale = ContentScale.Crop
+                                            contentScale = ContentScale.Crop,
+                                            error = painterResource(id = getRandomPlaceholderId())
                                         )
                                     },
                                     modifier = Modifier.clickable {

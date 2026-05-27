@@ -14,6 +14,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.qian.jianyin.R
+import androidx.compose.ui.res.painterResource
+import androidx.compose.runtime.remember
+
+private fun getRandomPlaceholderId(): Int {
+    val ids = listOf(R.drawable.miku_1, R.drawable.miku_2, R.drawable.miku_3, R.drawable.miku_4, R.drawable.miku_5, R.drawable.miku_6, R.drawable.miku_7, R.drawable.miku_8, R.drawable.miku_9)
+    return ids.random()
+}
 
 @Composable
 fun MiniPlayer(song: Song, isPlaying: Boolean, onTogglePlay: () -> Unit) {
@@ -31,10 +39,12 @@ fun MiniPlayer(song: Song, isPlaying: Boolean, onTogglePlay: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             // 封面
+            val mikuPainter = painterResource(id = getRandomPlaceholderId())
             AsyncImage(
                 model = song.pic,
                 contentDescription = null,
-                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp))
+                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)),
+                error = mikuPainter
             )
             // 歌名和歌手
             Column(

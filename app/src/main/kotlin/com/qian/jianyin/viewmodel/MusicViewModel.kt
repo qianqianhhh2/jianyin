@@ -1,7 +1,10 @@
 package com.qian.jianyin
 
 import android.app.Application
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.content.Context
+import android.content.IntentFilter
 import android.media.AudioManager
 import android.net.Uri
 import android.util.Log
@@ -28,6 +31,7 @@ import moe.ouom.biliapi.BiliWebLoginHelper
 import moe.ouom.biliapi.BiliAudioStreamInfo
 import moe.ouom.biliapi.SavedCookieAuthState
 import com.qian.jianyin.playback.DesktopLyricService
+import com.qian.jianyin.playback.BluetoothDisconnectReceiver
 
 // 歌单队列项数据类
 data class PlaylistQueueItem(
@@ -115,6 +119,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val gson = Gson()
     private var progressJob: Job? = null
     private var fadeJob: Job? = null
+    
+    private var bluetoothDisconnectReceiver: BluetoothDisconnectReceiver? = null
 
     private val retrofit = Retrofit.Builder()
         .baseUrl("https://api.qijieya.cn/")
@@ -228,6 +234,44 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
         // 初始化B站登录状态监听
         initializeBiliLoginStateListener()
+        
+        // 注册蓝牙断开监听
+        registerBluetoothDisconnectReceiver()
+    }
+    
+    private fun registerBluetoothDisconnectReceiver() {
+        bluetoothDisconnectReceiver = BluetoothDisconnectReceiver {
+            if (player.isPlaying) {
+                Log.d("MusicVM", "蓝牙设备断开，自动暂停播放")
+                player.pause()
+                isPlaying.value = false
+                mediaSessionManager.updatePlaybackState(false, player.currentPosition)
+            }
+        }
+        
+        val intentFilter = IntentFilter().apply {
+            addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+        }
+        
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                getApplication<Application>().registerReceiver(
+                    bluetoothDisconnectReceiver,
+                    intentFilter,
+                    Context.RECEIVER_NOT_EXPORTED
+                )
+            } else {
+                getApplication<Application>().registerReceiver(
+                    bluetoothDisconnectReceiver,
+                    intentFilter
+                )
+            }
+            Log.d("MusicVM", "蓝牙断开监听已注册")
+        } catch (e: Exception) {
+            Log.e("MusicVM", "注册蓝牙断开监听失败", e)
+        }
     }
 
     private fun initializeBiliLoginStateListener() {
@@ -1232,6 +1276,8 @@ fun togglePlay() {
             }
             Log.d("MusicVM", "从队列移除: ${song.name}, 新队列大小: ${playQueue.size}")
         }
+        
+        savePlaybackState()
     }
     
     /**
@@ -1262,6 +1308,8 @@ fun togglePlay() {
         }
         
         Log.d("MusicVM", "队列歌曲移动: from=$fromIndex, to=$toIndex, 当前播放索引: ${currentQueueIndex.intValue}")
+        
+        savePlaybackState()
     }
 
     fun moveQueueItems(fromIndices: List<Int>, toIndex: Int) {
@@ -1307,6 +1355,8 @@ fun togglePlay() {
         }
         
         Log.d("MusicVM", "批量移动: from=$sortedIndices, to=$toIndex, 新索引=$newIndices")
+        
+        savePlaybackState()
     }
 
     /**
@@ -1327,6 +1377,8 @@ fun togglePlay() {
         mediaSessionManager.hideNotification()
         audioManager.abandonAudioFocus(audioFocusChangeListener)
         Log.d("MusicVM", "队列已清空，之前大小: $previousSize")
+        
+        savePlaybackState()
     }
     
     /**
@@ -1811,6 +1863,17 @@ fun togglePlay() {
 
     override fun onCleared() {
         super.onCleared()
+        
+        // 注销蓝牙断开监听
+        try {
+            bluetoothDisconnectReceiver?.let {
+                getApplication<Application>().unregisterReceiver(it)
+                Log.d("MusicVM", "蓝牙断开监听已注销")
+            }
+        } catch (e: Exception) {
+            Log.e("MusicVM", "注销蓝牙断开监听失败", e)
+        }
+        
         audioManager.abandonAudioFocus(audioFocusChangeListener)
         mediaSessionManager.release()
         player.release()

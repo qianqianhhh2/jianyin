@@ -129,6 +129,13 @@ import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
+import com.qian.jianyin.R
+import androidx.compose.ui.res.painterResource
+
+private fun getRandomPlaceholderId(): Int {
+    val ids = listOf(R.drawable.miku_1, R.drawable.miku_2, R.drawable.miku_3, R.drawable.miku_4, R.drawable.miku_5, R.drawable.miku_6, R.drawable.miku_7, R.drawable.miku_8, R.drawable.miku_9)
+    return ids.random()
+}
 
 @UnstableApi
 
@@ -1024,7 +1031,8 @@ fun MiniPlayerBar(vm: MusicViewModel) {
                     model = song.pic, 
                     contentDescription = null, 
                     modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)), 
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
+                    error = painterResource(id = getRandomPlaceholderId())
                 )
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                     Text(song.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, fontWeight = FontWeight.Bold)
@@ -1123,7 +1131,8 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                         scaleY = scale, 
                         translationX = offsetX, 
                         translationY = offsetY, 
-                        rotationZ = rotation
+                        rotationZ = rotation,
+                        alpha = 0.6f
                     )
                     .then(
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -1131,8 +1140,8 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                         } else {
                             Modifier
                         }
-                    )
-                    .graphicsLayer(alpha = 0.6f)
+                    ),
+                error = painterResource(id = getRandomPlaceholderId())
             )
         }
 
@@ -1175,7 +1184,8 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                             song.pic, 
                             null, 
                             Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
+                            contentScale = ContentScale.Crop,
+                            error = painterResource(id = getRandomPlaceholderId())
                         )
                     }
                 }
@@ -1823,7 +1833,8 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                             .size(48.dp)
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(MaterialTheme.colorScheme.surfaceVariant),
-                                        contentScale = ContentScale.Crop
+                                        contentScale = ContentScale.Crop,
+                                        error = painterResource(id = getRandomPlaceholderId())
                                     )
                                 },
                                 modifier = Modifier.clickable {
@@ -2044,7 +2055,8 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                             modifier = Modifier
                                                 .size(32.dp)
                                                 .clip(RoundedCornerShape(6.dp)),
-                                            contentScale = ContentScale.Crop
+                                            contentScale = ContentScale.Crop,
+                                            error = painterResource(id = getRandomPlaceholderId())
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Column {
@@ -2343,7 +2355,8 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                                         Color(0xFFFFFEFE)
                                                 )
                                                 .then(if (isSelectionMode) Modifier.clickable { selectedSongs = if (selectedSongs.contains(songKey)) selectedSongs - songKey else selectedSongs + songKey } else Modifier),
-                                            contentScale = ContentScale.Crop
+                                            contentScale = ContentScale.Crop,
+                                            error = painterResource(id = getRandomPlaceholderId())
                                         )
                                         
                                         Column(modifier = Modifier
@@ -2671,7 +2684,8 @@ fun AddPlaylistToQueueDialog(
                                                 modifier = Modifier
                                                     .size(48.dp)
                                                     .clip(RoundedCornerShape(8.dp)),
-                                                contentScale = ContentScale.Crop
+                                                contentScale = ContentScale.Crop,
+                                                error = painterResource(id = getRandomPlaceholderId())
                                             )
                                             Spacer(modifier = Modifier.width(12.dp))
                                             Column(modifier = Modifier.weight(1f)) {
@@ -2729,7 +2743,8 @@ fun AddPlaylistToQueueDialog(
                                             modifier = Modifier
                                                 .size(48.dp)
                                                 .clip(RoundedCornerShape(8.dp)),
-                                            contentScale = ContentScale.Crop
+                                            contentScale = ContentScale.Crop,
+                                            error = painterResource(id = getRandomPlaceholderId())
                                         )
                                         Spacer(modifier = Modifier.width(12.dp))
                                         Column(modifier = Modifier.weight(1f)) {

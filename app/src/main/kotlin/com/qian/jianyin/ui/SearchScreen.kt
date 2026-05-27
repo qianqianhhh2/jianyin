@@ -28,9 +28,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.qian.jianyin.R
+import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+private fun getRandomPlaceholderId(): Int {
+    val ids = listOf(R.drawable.miku_1, R.drawable.miku_2, R.drawable.miku_3, R.drawable.miku_4, R.drawable.miku_5, R.drawable.miku_6, R.drawable.miku_7, R.drawable.miku_8, R.drawable.miku_9)
+    return ids.random()
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
     vm: MusicViewModel,
@@ -283,7 +290,8 @@ fun SearchScreen(
                                                 .size(if (isSelectionMode) 48.dp else 56.dp)
                                                 .clip(RoundedCornerShape(12.dp))
                                                 .background(if (isDarkMode) Color(0xFF2D3748) else Color(0xFFE3EAF6)),
-                                            contentScale = ContentScale.Crop
+                                            contentScale = ContentScale.Crop,
+                                            error = painterResource(id = getRandomPlaceholderId())
                                         )
                                         Column(Modifier.padding(start = if (isSelectionMode) 12.dp else 16.dp).weight(1f)) {
                                             Text(song.name, color = colorScheme.onBackground, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -328,7 +336,8 @@ fun SearchScreen(
                                             .size(48.dp)
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(colorScheme.surfaceVariant),
-                                        contentScale = ContentScale.Crop
+                                        contentScale = ContentScale.Crop,
+                                        error = painterResource(id = getRandomPlaceholderId())
                                     )
                                 },
                                 modifier = Modifier.clickable {
@@ -472,7 +481,8 @@ fun SongItemViewV2(song: Song, cs: ColorScheme, isDarkMode: Boolean, onClick: ()
                     .size(56.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(if (isDarkMode) Color(0xFF2D3748) else Color(0xFFE3EAF6)),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                error = painterResource(id = getRandomPlaceholderId())
             )
             
             Column(

@@ -30,6 +30,10 @@
     <!-- 震动权限 -->
     <uses-permission android:name="android.permission.VIBRATE" />
     
+    <!-- 蓝牙权限（用于监听蓝牙设备断开） -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    
     <!-- 悬浮窗权限（Android 6.0+） -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
