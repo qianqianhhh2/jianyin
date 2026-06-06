@@ -70,7 +70,14 @@ fun SearchScreen(
             // 1. 搜索框：适配 M3 OutlinedTextField 风格
             OutlinedTextField(
                 value = searchText,
-                onValueChange = { searchText = it },
+                onValueChange = { 
+                    searchText = it
+                    if (it.isNotEmpty()) {
+                        vm.searchWithoutHistory(it)
+                    } else {
+                        vm.searchResults.clear()
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp, 8.dp), // 减小底部padding，缩小与搜索历史的间隙
@@ -79,7 +86,10 @@ fun SearchScreen(
                 leadingIcon = { Icon(Icons.Default.Search, null, tint = colorScheme.onSurfaceVariant) },
                 trailingIcon = {
                     if (searchText.isNotEmpty()) {
-                        IconButton(onClick = { vm.executeSearch(searchText) }) {
+                        IconButton(onClick = { 
+                            vm.executeSearch(searchText)
+                            focusManager.clearFocus()
+                        }) {
                             Icon(Icons.Default.Send, null, tint = colorScheme.primary)
                         }
                     }
@@ -247,7 +257,14 @@ fun SearchScreen(
                                                 if (isSelectionMode) {
                                                     selectedSongs = if (isSelected) selectedSongs - index else selectedSongs + index
                                                 } else {
-                                                    vm.playSong(song, vm.searchResults)
+                                                    android.util.Log.d("SearchScreen", "点击歌曲: name=${song.name}, source=${song.source}, url='${song.url}', id=${song.id}")
+                                                    if (song.source == SongSource.NETEASE) {
+                                                        android.util.Log.d("SearchScreen", "调用 playNeteaseSong")
+                                                        vm.playNeteaseSong(song, vm.searchResults)
+                                                    } else {
+                                                        android.util.Log.d("SearchScreen", "调用 playSong")
+                                                        vm.playSong(song, vm.searchResults)
+                                                    }
                                                 }
                                             },
                                             onLongClick = {

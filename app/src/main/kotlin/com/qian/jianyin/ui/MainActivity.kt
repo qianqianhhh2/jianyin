@@ -41,17 +41,25 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.*
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -82,6 +90,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import com.qian.jianyin.ProgressBarStyle
 import com.qian.jianyin.PlaylistQueueItem
 import com.qian.jianyin.PlaylistDataStore
@@ -105,6 +114,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import android.graphics.Color as AndroidColor
 import android.widget.Toast
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import android.content.Intent
 import android.content.Context
@@ -121,7 +131,7 @@ import com.qian.jianyin.DownloadSettingsStore
 import com.qian.jianyin.playback.DesktopLyricService
 import com.qian.jianyin.playback.DesktopLyricSettings
 import androidx.compose.runtime.collectAsState
-import moe.ouom.biliapi.BiliWebLoginHelper
+import com.qian.jianyin.bili.BiliWebLoginHelper
 import androidx.media3.common.util.UnstableApi
 import dev.chrisbanes.haze.ExperimentalHazeApi
 import dev.chrisbanes.haze.HazeState
@@ -182,6 +192,8 @@ class MainActivity : ComponentActivity() {
     private var pendingAudioUri: Uri? = null
     // 用于 B 站登录的 ActivityResultLauncher
     private lateinit var biliLoginLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>
+    // 用于网易云登录的 ActivityResultLauncher
+    private lateinit var neteaseLoginLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
@@ -208,6 +220,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         
+        // 初始化网易云 API
+        com.qian.jianyin.netease.api.NeteaseApiService.init(this)
+        
         // 初始化 B 站登录的 ActivityResultLauncher
         biliLoginLauncher = registerForActivityResult(
             object : androidx.activity.result.contract.ActivityResultContract<android.content.Intent, String?>() {
@@ -217,7 +232,7 @@ class MainActivity : ComponentActivity() {
 
                 override fun parseResult(resultCode: Int, intent: android.content.Intent?): String? {
                     if (resultCode == android.app.Activity.RESULT_OK) {
-                        val cookieJson = intent?.getStringExtra(moe.ouom.biliapi.BiliWebLoginHelper.Companion.RESULT_COOKIE)
+                        val cookieJson = intent?.getStringExtra(com.qian.jianyin.bili.BiliWebLoginHelper.Companion.RESULT_COOKIE)
                         Log.d("BiliLogin", "parseResult: 收到Cookie JSON: $cookieJson")
                         return cookieJson
                     }
@@ -229,7 +244,7 @@ class MainActivity : ComponentActivity() {
             Log.d("BiliLogin", "回调: 收到JSON: $json")
             if (json != null) {
                 try {
-                    val biliApi = moe.ouom.biliapi.BiliApi.getInstance(this)
+                    val biliApi = com.qian.jianyin.bili.BiliApi.getInstance(this)
                     Log.d("BiliLogin", "回调: 调用saveCookiesFromJson")
                     val saved = biliApi.saveCookiesFromJson(json)
                     Log.d("BiliLogin", "回调: saveCookiesFromJson结果: $saved")
@@ -281,6 +296,62 @@ class MainActivity : ComponentActivity() {
                 }
             } else {
                 Log.d("BiliLogin", "回调: 收到null JSON")
+            }
+        }
+
+        // 初始化网易云登录的 ActivityResultLauncher
+        neteaseLoginLauncher = registerForActivityResult(
+            object : androidx.activity.result.contract.ActivityResultContract<android.content.Intent, String?>() {
+                override fun createIntent(context: android.content.Context, input: android.content.Intent): android.content.Intent {
+                    return input
+                }
+
+                override fun parseResult(resultCode: Int, intent: android.content.Intent?): String? {
+                    if (resultCode == android.app.Activity.RESULT_OK) {
+                        val cookieJson = intent?.getStringExtra(com.qian.jianyin.netease.NeteaseWebLoginActivity.RESULT_COOKIE_MAP_JSON)
+                        Log.d("NeteaseLogin", "parseResult: 收到Cookie JSON: $cookieJson")
+                        return cookieJson
+                    }
+                    Log.d("NeteaseLogin", "parseResult: 登录失败，resultCode: $resultCode")
+                    return null
+                }
+            }
+        ) { json ->
+            Log.d("NeteaseLogin", "回调: 收到JSON: $json")
+            if (json != null) {
+                try {
+                    val cookieMap = org.json.JSONObject(json)
+                    val cookies = mutableMapOf<String, String>()
+                    val keys = cookieMap.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        cookies[key] = cookieMap.getString(key)
+                    }
+                    val ok = com.qian.jianyin.netease.api.NeteaseApiService.setCookies(cookies)
+                    if (ok) {
+                        android.widget.Toast.makeText(this, "网易云登录成功", android.widget.Toast.LENGTH_SHORT).show()
+                        lifecycleScope.launch {
+                            Log.d("NeteaseLogin", "开始同步网易云歌单")
+                            val synced = viewModel?.syncNeteaseUserPlaylists()
+                            if (synced != null && synced.isNotEmpty()) {
+                                android.widget.Toast.makeText(this@MainActivity, "已同步 ${synced.size} 个歌单", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                android.widget.Toast.makeText(this@MainActivity, "未发现歌单", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    } else {
+                        android.widget.Toast.makeText(this, "Cookie 验证失败，请重新登录", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    Log.e("NeteaseLogin", "回调: 保存Cookie时发生异常", e)
+                    android.widget.Toast.makeText(
+                        this,
+                        "保存登录信息失败: ${e.message}",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } else {
+                Log.d("NeteaseLogin", "回调: 收到null JSON")
             }
         }
         
@@ -511,6 +582,12 @@ class MainActivity : ComponentActivity() {
     // 启动 B 站登录
     fun startBiliLogin() {
         BiliWebLoginHelper.startLoginWithExistingLauncher(this, biliLoginLauncher)
+    }
+
+    // 启动网易云登录
+    fun startNeteaseLogin() {
+        val intent = android.content.Intent(this, com.qian.jianyin.netease.NeteaseWebLoginActivity::class.java)
+        neteaseLoginLauncher.launch(intent)
     }
     
     // 请求悬浮窗权限的回调
@@ -1826,16 +1903,29 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                 headlineContent = { Text(targetPlaylist.name) },
                                 supportingContent = { Text("${targetPlaylist.songs.size} 首歌曲") },
                                 leadingContent = {
-                                    AsyncImage(
-                                        model = targetPlaylist.coverPic,
-                                        contentDescription = null,
-                                        modifier = Modifier
-                                            .size(48.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                                        contentScale = ContentScale.Crop,
-                                        error = painterResource(id = getRandomPlaceholderId())
-                                    )
+                                    val cover = targetPlaylist.coverPic.ifBlank { null }
+                                    if (cover != null) {
+                                        AsyncImage(
+                                            model = cover,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                                            contentScale = ContentScale.Crop,
+                                            error = painterResource(id = getRandomPlaceholderId())
+                                        )
+                                    } else {
+                                        Image(
+                                            painter = painterResource(id = getRandomPlaceholderId()),
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    }
                                 },
                                 modifier = Modifier.clickable {
                                     val songsToAdd = selectedSongs.mapNotNull { url ->
@@ -2049,15 +2139,27 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                                 )
                                             }
                                         }
-                                        AsyncImage(
-                                            model = playlist.coverPic,
-                                            contentDescription = null,
-                                            modifier = Modifier
-                                                .size(32.dp)
-                                                .clip(RoundedCornerShape(6.dp)),
-                                            contentScale = ContentScale.Crop,
-                                            error = painterResource(id = getRandomPlaceholderId())
-                                        )
+                                        val cover = playlist.coverPic.ifBlank { null }
+                                        if (cover != null) {
+                                            AsyncImage(
+                                                model = cover,
+                                                contentDescription = null,
+                                                modifier = Modifier
+                                                    .size(32.dp)
+                                                    .clip(RoundedCornerShape(6.dp)),
+                                                contentScale = ContentScale.Crop,
+                                                error = painterResource(id = getRandomPlaceholderId())
+                                            )
+                                        } else {
+                                            Image(
+                                                painter = painterResource(id = getRandomPlaceholderId()),
+                                                contentDescription = null,
+                                                modifier = Modifier
+                                                    .size(32.dp)
+                                                    .clip(RoundedCornerShape(6.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        }
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Column {
                                             Text(
@@ -2112,7 +2214,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                     val density = LocalDensity.current
                     val itemHeight = 72.dp
                     LazyColumn(state = queueState, modifier = Modifier.weight(1f, fill = false)) {
-                        itemsIndexed(vm.playQueue, key = { _, song -> song.id.ifBlank { song.url } }) { index, s ->
+                        itemsIndexed(vm.playQueue, key = { idx, song -> "${idx}${song.id.ifBlank { song.url }}" }) { index, s ->
                             val isDragging = draggedSongIndex == index
                             val songKey = s.id.ifBlank { s.url }
                             val isSelected = selectedSongs.contains(songKey)
@@ -2149,7 +2251,11 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                                         if (isSelectionMode) {
                                                             selectedSongs = if (selectedSongs.contains(songKey)) selectedSongs - songKey else selectedSongs + songKey
                                                         } else {
-                                                            vm.playSong(s)
+                                                            if (s.source == SongSource.NETEASE) {
+                                                                vm.playNeteaseSong(s)
+                                                            } else {
+                                                                vm.playSong(s)
+                                                            }
                                                         }
                                                     },
                                                     onLongPress = {
@@ -2168,7 +2274,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                                         }
                                                         if (!isSelectionMode) {
                                                             isSelectionMode = true
-                                                            selectedSongs = setOf(s.url)
+                                                            selectedSongs = setOf(songKey)
                                                         }
                                                     }
                                                 )
@@ -2554,39 +2660,86 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
 }
 
 /**
- * 歌词列表组件
- * 显示当前歌曲的歌词，并支持自动滚动到当前播放行
- * @param vm 音乐视图模型
+ * 逐字歌词列表（仿 Neri AppleMusicLyric）。
+ * 外层仅依赖 currentIndex（VM 每 500ms 更新一次），避免逐帧重组。
+ * 当前行内的逐字动画由 AppleMusicActiveLine 内部自行驱动。
  */
 @Composable
 fun LyricList(vm: MusicViewModel) {
-    val state = rememberLazyListState()
+    val listState = rememberLazyListState()
     val currentIndex by vm.currentLineIndex
-    LaunchedEffect(currentIndex) { 
-        if (vm.currentLrc.isNotEmpty()) {
-            state.animateScrollToItem(currentIndex, scrollOffset = 0)
-        }
+    // currentPosition 读取仅用于传递给当前行做内部动画，不用于外层重组判断
+    val currentPositionMs by remember { derivedStateOf { vm.currentPosition.longValue } }
+
+    LaunchedEffect(currentIndex) {
+        if (vm.currentLrc.isNotEmpty())
+            listState.animateScrollToItem(currentIndex)
     }
-    
+
+    val transByIndex = remember(vm.currentLrc.size, vm.currentTranslatedLrc.size) {
+        matchTranslationsToLineIndices(vm.currentLrc, vm.currentTranslatedLrc)
+    }
+
+    val activeColor = MaterialTheme.colorScheme.primary
+    val playedColor = Color.White.copy(alpha = 0.55f)
+    val inactiveColor = Color.White.copy(alpha = 0.30f)
+
     Column(modifier = Modifier.fillMaxSize()) {
         Spacer(Modifier.height(32.dp))
         LazyColumn(
-            state = state, 
-            modifier = Modifier.weight(1f), 
+            state = listState,
+            modifier = Modifier.weight(1f),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            itemsIndexed(vm.currentLrc) { index, line ->
-                Text(
-                        text = line.text, 
-                        color = if (index == currentIndex) MaterialTheme.colorScheme.primary else Color.White.copy(0.4f),
-                        fontSize = if (index == currentIndex) 22.sp else 18.sp, 
-                        textAlign = TextAlign.Center, 
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxWidth()
-                            .clickable { vm.seekTo(line.time) }
-                    )
+            itemsIndexed(vm.currentLrc, key = { _, line -> "${line.startTimeMs}:${line.endTimeMs}" }) { index, line ->
+                // isCurrent / isPlayed 仅依赖 currentIndex（500ms 更新），不依赖实时位置
+                val isCurrent by remember {
+                    derivedStateOf { index == currentIndex }
+                }
+                val isPlayed by remember {
+                    derivedStateOf { index < currentIndex }
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { vm.seekTo(line.startTimeMs) }
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    if (isCurrent) {
+                        // 当前行内部自行做时间平滑 + 逐字动画
+                        AppleMusicActiveLine(
+                            line = line,
+                            currentTimeMs = currentPositionMs,
+                            activeColor = activeColor,
+                            inactiveColor = activeColor.copy(alpha = 0.30f),
+                            fontSize = 22.sp,
+                            fadeWidth = 12.dp
+                        )
+                    } else {
+                        Text(
+                            text = line.text,
+                            color = if (isPlayed) playedColor else inactiveColor,
+                            fontSize = 18.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    transByIndex[index]?.let { t ->
+                        Text(
+                            text = t.text,
+                            color = if (isCurrent) activeColor.copy(alpha = 0.75f)
+                                    else Color.White.copy(alpha = if (isPlayed) 0.55f else 0.30f),
+                            fontSize = if (isCurrent) 15.sp else 13.sp,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 8.dp).fillMaxWidth(0.85f)
+                        )
+                    }
+                }
             }
         }
         Spacer(Modifier.height(32.dp))

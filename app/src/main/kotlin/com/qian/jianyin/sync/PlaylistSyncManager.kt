@@ -1,12 +1,9 @@
 package com.qian.jianyin
 
 import android.content.Context
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import com.qian.jianyin.netease.api.NeteaseApiService
 
 data class HomePlaylistInfo(
     val name: String,
@@ -17,9 +14,6 @@ data class HomePlaylistInfo(
 )
 
 object PlaylistSyncManager {
-    private val client = OkHttpClient()
-    private val gson = Gson()
-    private const val BASE_URL = "https://api.qijieya.cn/meting/"
 
     private val homePlaylists = listOf(
         HomePlaylistInfo("复古摇摆 | 曼城风韵", "7673743198", "气质犹存 我为电狂", "https://p2.music.126.net/pcYHpMkdC69VVvWiynNklA==/109951166952713766.jpg"),
@@ -35,22 +29,11 @@ object PlaylistSyncManager {
     fun getAllHomePlaylists(): List<HomePlaylistInfo> = homePlaylists
 
     /**
-     * 根据歌单ID同步歌曲列表（使用默认音质）
+     * 根据歌单ID同步歌曲列表
      */
     suspend fun fetchPlaylist(playlistId: String): List<Song>? = withContext(Dispatchers.IO) {
         try {
-            val url = "$BASE_URL?type=playlist&id=$playlistId"
-            val request = Request.Builder().url(url).build()
-            
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext null
-                
-                val json = response.body?.string() ?: return@withContext null
-                val type = object : TypeToken<List<Song>>() {}.type
-                
-                // 返回歌曲列表
-                gson.fromJson<List<Song>>(json, type)
-            }
+            NeteaseApiService.getPlaylistDetail(playlistId).map { it.toSong() }
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -58,27 +41,11 @@ object PlaylistSyncManager {
     }
 
     /**
-     * 根据歌单ID同步歌曲列表（使用指定音质）
+     * 根据歌单ID同步歌曲列表（context参数保留兼容，实际不再依赖音质参数）
      */
     suspend fun fetchPlaylist(playlistId: String, context: Context): List<Song>? = withContext(Dispatchers.IO) {
         try {
-            val playQuality = DownloadSettingsStore.getPlayQuality(context)
-            val url = if (playQuality != 320) {
-                "$BASE_URL?type=playlist&id=$playlistId&br=$playQuality"
-            } else {
-                "$BASE_URL?type=playlist&id=$playlistId"
-            }
-            val request = Request.Builder().url(url).build()
-            
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext null
-                
-                val json = response.body?.string() ?: return@withContext null
-                val type = object : TypeToken<List<Song>>() {}.type
-                
-                // 返回歌曲列表
-                gson.fromJson<List<Song>>(json, type)
-            }
+            NeteaseApiService.getPlaylistDetail(playlistId).map { it.toSong() }
         } catch (e: Exception) {
             e.printStackTrace()
             null

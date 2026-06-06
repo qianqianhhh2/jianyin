@@ -5,8 +5,8 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.biliapi.BiliApi
-import moe.ouom.biliapi.BiliClient
+import com.qian.jianyin.bili.BiliApi
+import com.qian.jianyin.bili.BiliClient
 
 object BiliPlaylistSyncManager {
     private val gson = Gson()

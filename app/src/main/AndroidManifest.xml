@@ -101,6 +101,12 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- 网易云网页登录 -->
+        <activity
+            android:name="com.qian.jianyin.netease.NeteaseWebLoginActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- 桌面歌词服务 -->
         <service
             android:name=".playback.DesktopLyricService"

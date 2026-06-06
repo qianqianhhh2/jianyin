@@ -23,13 +23,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import org.json.JSONObject
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.converter.scalars.ScalarsConverterFactory
-import moe.ouom.biliapi.BiliApi
-import moe.ouom.biliapi.BiliWebLoginHelper
-import moe.ouom.biliapi.BiliAudioStreamInfo
-import moe.ouom.biliapi.SavedCookieAuthState
+import com.qian.jianyin.bili.BiliApi
+import com.qian.jianyin.bili.BiliWebLoginHelper
+import com.qian.jianyin.bili.BiliAudioStreamInfo
+import com.qian.jianyin.bili.SavedCookieAuthState
+import com.qian.jianyin.netease.NeteaseSongSearchResult
+import com.qian.jianyin.netease.api.NeteaseApiService
 import com.qian.jianyin.playback.DesktopLyricService
 import com.qian.jianyin.playback.BluetoothDisconnectReceiver
 
@@ -71,7 +74,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val isPlayerSheetVisible = mutableStateOf(false)
 
     // 进度与歌词
-    val currentLrc = mutableStateListOf<LrcLine>()
+    val currentLrc = mutableStateListOf<LyricEntry>()
+    val currentTranslatedLrc = mutableStateListOf<LyricEntry>()
     val currentLineIndex = mutableIntStateOf(0)
     var currentPosition = mutableLongStateOf(0L)
     var totalDuration = mutableLongStateOf(0L)
@@ -84,6 +88,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     
     // --- 播放速度 ---
     val playbackSpeed = mutableStateOf(1.0f)  // 当前播放速度，默认为1.0x
+
+    // Toast 消息
+    val toastMessage = mutableStateOf<String?>(null)
 
     val currentPlayingList = mutableStateListOf<Song>()   // 当前播放歌曲的来源列表
     val currentPlayingListIndex = mutableIntStateOf(-1)    // 当前歌曲在来源列表中的索引
@@ -343,6 +350,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             artist = item.owner,
                             url = "",
                             pic = item.pic,
+                            source = SongSource.BILI,
                             isBiliVideo = true,
                             bvid = item.bvid,
                             cid = item.cid
@@ -364,7 +372,37 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             null
         }
     }
-    
+
+    suspend fun syncNeteaseUserPlaylists(): List<UserSyncedPlaylist>? = withContext(Dispatchers.IO) {
+        try {
+            val context = getApplication<Application>()
+            val userId = NeteaseApiService.getCurrentUserId()
+            val playlists = NeteaseApiService.getUserPlaylists(userId)
+            if (playlists.isEmpty()) return@withContext null
+
+            val syncedPlaylists = mutableListOf<UserSyncedPlaylist>()
+            for (pl in playlists) {
+                val songs = PlaylistSyncManager.fetchPlaylist(pl.id) ?: continue
+                if (songs.isEmpty()) continue
+                val playlist = UserSyncedPlaylist(
+                    id = pl.id,
+                    name = pl.name,
+                    coverPic = pl.picUrl,
+                    songs = songs
+                )
+                PlaylistDataStore.save(context, playlist)
+                syncedPlaylists.add(playlist)
+            }
+            withContext(Dispatchers.Main) {
+                playlistUpdateTrigger.intValue++
+            }
+            syncedPlaylists
+        } catch (e: Exception) {
+            Log.e("MusicVM", "同步网易云歌单失败", e)
+            null
+        }
+    }
+
     /**
      * 初始化媒体会话
      */
@@ -515,17 +553,149 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             isSearching.value = true
             try {
-                val res = api.searchSongs(keyword = query)
+                val results = NeteaseApiService.searchSongs(query)
                 searchResults.clear()
-                searchResults.addAll(res)
+                results.forEach { neteaseSong ->
+                    searchResults.add(Song(
+                        id = neteaseSong.id,
+                        name = neteaseSong.name,
+                        artist = neteaseSong.artist,
+                        url = "",
+                        pic = neteaseSong.picUrl,
+                        source = SongSource.NETEASE
+                    ))
+                }
                 if (!searchHistory.contains(query)) {
                     searchHistory.add(0, query)
                     saveSearchHistory()
                 }
             } catch (e: Exception) {
-                Log.e("MusicVM", "搜索失败", e)
+                Log.e("MusicVM", "网易云搜索失败", e)
             } finally {
                 isSearching.value = false
+            }
+        }
+    }
+
+    fun executeNeteaseSearch(query: String) {
+        if (query.isBlank()) return
+        viewModelScope.launch {
+            isSearching.value = true
+            try {
+                val results = NeteaseApiService.searchSongs(query)
+                searchResults.clear()
+                results.forEach { neteaseSong ->
+                    searchResults.add(Song(
+                        id = neteaseSong.id,
+                        name = neteaseSong.name,
+                        artist = neteaseSong.artist,
+                        url = "",
+                        pic = neteaseSong.picUrl,
+                        source = SongSource.NETEASE
+                    ))
+                }
+                if (!searchHistory.contains(query)) {
+                    searchHistory.add(0, query)
+                    saveSearchHistory()
+                }
+            } catch (e: Exception) {
+                Log.e("MusicVM", "网易云搜索失败", e)
+            } finally {
+                isSearching.value = false
+            }
+        }
+    }
+
+    fun searchWithoutHistory(query: String) {
+        if (query.isBlank()) return
+        viewModelScope.launch {
+            isSearching.value = true
+            try {
+                val results = NeteaseApiService.searchSongs(query)
+                searchResults.clear()
+                results.forEach { neteaseSong ->
+                    searchResults.add(Song(
+                        id = neteaseSong.id,
+                        name = neteaseSong.name,
+                        artist = neteaseSong.artist,
+                        url = "",
+                        pic = neteaseSong.picUrl,
+                        source = SongSource.NETEASE
+                    ))
+                }
+            } catch (e: Exception) {
+                Log.e("MusicVM", "网易云搜索失败", e)
+            } finally {
+                isSearching.value = false
+            }
+        }
+    }
+
+    private suspend fun fetchNeteaseSongUrl(song: Song): Song {
+        if (song.source != SongSource.NETEASE) {
+            if (song.url.isNotBlank()) return song
+            return song
+        }
+
+        return try {
+            val context = getApplication<Application>()
+            val qualityLevel = DownloadSettingsStore.getPlayQuality(context)
+            Log.d("MusicVM", "fetchNeteaseSongUrl: 开始获取URL，songId=${song.id}, quality=$qualityLevel")
+            val url = NeteaseApiService.getSongUrl(song.id, qualityLevel)
+            Log.d("MusicVM", "fetchNeteaseSongUrl: 获取结果，url=${url ?: "null"}")
+            if (url != null) {
+                Log.d("MusicVM", "fetchNeteaseSongUrl: 成功获取URL: ${song.name}")
+                song.copy(url = url)
+            } else {
+                Log.e("MusicVM", "fetchNeteaseSongUrl: 获取URL失败，返回null: ${song.name}")
+                song
+            }
+        } catch (e: Exception) {
+            Log.e("MusicVM", "fetchNeteaseSongUrl: 获取网易云歌曲URL异常: ${song.id}", e)
+            song
+        }
+    }
+
+    /** 获取网易云歌词，返回 Pair(原词, 翻译词) */
+    suspend fun fetchNeteaseLyric(song: Song): Pair<String?, String?> {
+        if (song.source != SongSource.NETEASE) return null to null
+        return try {
+            val response = NeteaseApiService.getLyricRaw(song.id)
+            val root = JSONObject(response)
+            val yrc = root.optJSONObject("yrc")?.optString("lyric").orEmpty()
+            val lrc = root.optJSONObject("lrc")?.optString("lyric").orEmpty()
+            val preferred = yrc.ifBlank { lrc.ifBlank { null } }
+            val translated = root.optJSONObject("ytlrc")?.optString("lyric")
+                ?: root.optJSONObject("tlyric")?.optString("lyric")
+                ?: ""
+            preferred to translated.ifBlank { null }
+        } catch (e: Exception) {
+            Log.e("MusicVM", "获取网易云歌词失败: ${song.id}", e)
+            null to null
+        }
+    }
+
+    fun playNeteaseSong(song: Song, newQueue: List<Song>? = null) {
+        Log.d("MusicVM", "playNeteaseSong 被调用: ${song.name}")
+        viewModelScope.launch {
+            try {
+                val songWithUrl = fetchNeteaseSongUrl(song)
+                if (songWithUrl.url.isBlank()) {
+                    Log.e("MusicVM", "获取网易云歌曲URL失败，歌曲: ${song.name}")
+                    toastMessage.value = "无法获取播放链接，请先登录网易云"
+                    return@launch
+                }
+                // 若未传入新队列，将已获取 URL 的歌曲回写到当前队列
+                if (newQueue == null) {
+                    val idx = playQueue.indexOfFirst { isSameSong(it, songWithUrl) }
+                    if (idx != -1) {
+                        playQueue[idx] = songWithUrl
+                    }
+                }
+                playSong(songWithUrl, newQueue)
+            } catch (e: Exception) {
+                Log.e("MusicVM", "播放网易云歌曲失败", e)
+                toastMessage.value = "播放失败: ${e.message}"
             }
         }
     }
@@ -553,8 +723,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             val index = newQueue.indexOfFirst { isSameSong(it, song) }
             currentQueueIndex.intValue = if (index != -1) index else 0
             
+            if (index != -1) {
+                playQueue[index] = song
+            }
             val songToPlay = playQueue[currentQueueIndex.intValue]
-            Log.d("MusicVM", "列表播放模式。队列大小=${playQueue.size}, 目标索引=$index, 即将播放: ${songToPlay.name}")
+            Log.d("MusicVM", "列表播放模式。队列大小=${playQueue.size}, 目标索引=$index, 即将播放: ${songToPlay.name}, url=${songToPlay.url}")
             
             startPlaying(songToPlay, newQueue)
         } else {
@@ -624,6 +797,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         // 更新当前歌曲和索引状态
         currentSong.value = song
         currentLrc.clear()
+        currentTranslatedLrc.clear()
         currentLineIndex.intValue = 0
         currentPosition.longValue = 0L
         totalDuration.longValue = 0L
@@ -642,11 +816,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             currentPlayingList.addAll(playQueue)
         }
         
-        // 历史记录处理
-        if (historyList.contains(song)) {
-            historyList.remove(song)
-        }
-        historyList.add(song) 
+        // 历史记录处理（按 song.id 去重，避免因 data class equals 含 url 导致重复）
+        historyList.removeAll { isSameSong(it, song) }
+        historyList.add(song)
         if (historyList.size > 50) {
             historyList.removeAt(0)
         }
@@ -780,14 +952,19 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             
             if (!song.isBiliVideo) {
                 Log.d("MusicVM", "非B站视频，准备播放: ${song.name}")
-                val playQuality = DownloadSettingsStore.getPlayQuality(context)
-                finalUrl = if (!song.isLocal && localSongPath == null && playQuality != 320) {
-                    // 非本地文件且非默认音质，添加br参数
-                    Log.d("MusicVM", "非本地文件，添加音质参数: $playQuality")
-                    if (song.url.contains("?")) {
-                        "${song.url}&br=$playQuality"
+                // 网易云歌曲已在 fetchNeteaseSongUrl 中按音质获取URL，无需额外处理
+                finalUrl = if (!song.isLocal && localSongPath == null && song.source != SongSource.NETEASE) {
+                    val playQuality = DownloadSettingsStore.getPlayQuality(context)
+                    val qualityBitrate = DownloadSettingsStore.netEaseQualityToBitrate(playQuality)
+                    if (qualityBitrate != 320000) {
+                        Log.d("MusicVM", "非本地文件，添加音质参数: $playQuality ($qualityBitrate)")
+                        if (song.url.contains("?")) {
+                            "${song.url}&br=$qualityBitrate"
+                        } else {
+                            "${song.url}?br=$qualityBitrate"
+                        }
                     } else {
-                        "${song.url}?br=$playQuality"
+                        song.url
                     }
                 } else {
                     song.url
@@ -853,6 +1030,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 var lrcContent = ""
+                var translatedLrcContent: String? = null
                 
                 if (song.isLocal) {
                     // 本地歌曲，优先使用自定义歌词
@@ -878,6 +1056,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     val customLyrics = SongCustomDataStore.getLyrics(getApplication(), song.url)
                     if (customLyrics.isNotEmpty()) {
                         lrcContent = customLyrics
+                    } else if (song.source == SongSource.NETEASE) {
+                        // 网易云歌曲，使用网易云歌词接口
+                        val (neteaseLrc, neteaseTrans) = fetchNeteaseLyric(song)
+                        lrcContent = neteaseLrc ?: ""
+                        translatedLrcContent = neteaseTrans
                     } else {
                         // 尝试获取本地下载的歌词或从网络获取
                         val localLrcPath = DownloadManager.getLocalLrcPath(getApplication(), song)
@@ -897,14 +1080,19 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 
                 currentLrc.clear()
+                currentTranslatedLrc.clear()
                 if (lrcContent.isNotEmpty()) {
-                    currentLrc.addAll(parseLrc(lrcContent))
+                    currentLrc.addAll(parseLyricAuto(lrcContent))
                 } else {
-                    currentLrc.add(LrcLine(0, "暂无歌词"))
+                    currentLrc.add(LyricEntry(0, 5000, "暂无歌词"))
+                }
+                if (!translatedLrcContent.isNullOrBlank()) {
+                    currentTranslatedLrc.addAll(parseLyricAuto(translatedLrcContent))
                 }
             } catch (e: Exception) {
                 currentLrc.clear()
-                currentLrc.add(LrcLine(0, "暂无歌词"))
+                currentTranslatedLrc.clear()
+                currentLrc.add(LyricEntry(0, 5000, "暂无歌词"))
             }
         }
         
@@ -986,19 +1174,40 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             val currentIndex = playQueue.indexOfFirst { isSameSong(it, currentSong.value ?: return@nextSong) }
             if (currentIndex == playQueue.size - 1) {
                 // 当前歌曲是歌单最后一首，尝试切换到下一个歌单
-                handleContinuousModePlaylistSwitch()
+                viewModelScope.launch {
+                    handleContinuousModePlaylistSwitch()
+                }
                 // 如果切换成功，handleContinuousModePlaylistSwitch 已经调用了 startPlaying，直接返回
                 return
             }
         }
         
-        applyFadeOut {
-            startPlaying(nextSong, playQueue)
+        // 检查下一首是否是网易云歌曲且需要获取URL
+        if (nextSong.source == SongSource.NETEASE) {
+            Log.d("MusicVM", "nextSong: 网易云歌曲需要获取URL，歌曲: ${nextSong.name}")
+            viewModelScope.launch {
+                val songWithUrl = fetchNeteaseSongUrl(nextSong)
+                if (songWithUrl.url.isBlank()) {
+                    Log.e("MusicVM", "nextSong: 获取网易云歌曲URL失败，歌曲: ${nextSong.name}")
+                    toastMessage.value = "无法获取播放链接，请先登录网易云"
+                    return@launch
+                }
+                // 更新队列中的歌曲URL
+                playQueue[currentQueueIndex.intValue] = songWithUrl
+                applyFadeOut {
+                    startPlaying(songWithUrl, playQueue)
+                }
+                Log.d("MusicVM", "下一首: ${songWithUrl.name}, 索引: $currentQueueIndex")
+            }
+        } else {
+            applyFadeOut {
+                startPlaying(nextSong, playQueue)
+            }
+            Log.d("MusicVM", "下一首: ${nextSong.name}, 索引: $currentQueueIndex")
         }
-        Log.d("MusicVM", "下一首: ${nextSong.name}, 索引: $currentQueueIndex")
     }
     
-    private fun handleContinuousModePlaylistSwitch() {
+    private suspend fun handleContinuousModePlaylistSwitch() {
         if (playlistQueue.isEmpty()) {
             Log.d("MusicVM", "持续播放模式：歌单队列为空，停止播放")
             player.pause()
@@ -1023,7 +1232,18 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         
         // 开始播放新歌单的第一首歌
         if (nextPlaylist.songs.isNotEmpty()) {
-            startPlaying(nextPlaylist.songs[0], nextPlaylist.songs)
+            val firstSong = nextPlaylist.songs[0]
+            if (firstSong.source == SongSource.NETEASE) {
+                val songWithUrl = fetchNeteaseSongUrl(firstSong)
+                if (songWithUrl.url.isNotBlank()) {
+                    playQueue[0] = songWithUrl
+                    startPlaying(songWithUrl, playQueue)
+                } else {
+                    toastMessage.value = "无法获取播放链接，请先登录网易云"
+                }
+            } else {
+                startPlaying(firstSong, nextPlaylist.songs)
+            }
         }
         
         Log.d("MusicVM", "持续播放模式：切换到下一个歌单: ${nextPlaylist.name}")
@@ -1033,10 +1253,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun setLyrics(lrcContent: String) {
         viewModelScope.launch {
             currentLrc.clear()
+            currentTranslatedLrc.clear()
             if (lrcContent.isNotEmpty()) {
-                currentLrc.addAll(parseLrc(lrcContent))
+                currentLrc.addAll(parseLyricAuto(lrcContent))
             } else {
-                currentLrc.add(LrcLine(0, "暂无歌词"))
+                currentLrc.add(LyricEntry(0, 5000, "暂无歌词"))
             }
         }
     }
@@ -1121,10 +1342,28 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         
-        applyFadeOut {
-            startPlaying(prevSong, playQueue)
+        if (prevSong.source == SongSource.NETEASE) {
+            Log.d("MusicVM", "previousSong: 网易云歌曲需要获取URL，歌曲: ${prevSong.name}")
+            viewModelScope.launch {
+                val songWithUrl = fetchNeteaseSongUrl(prevSong)
+                if (songWithUrl.url.isBlank()) {
+                    Log.e("MusicVM", "previousSong: 获取网易云歌曲URL失败，歌曲: ${prevSong.name}")
+                    toastMessage.value = "无法获取播放链接，请先登录网易云"
+                    return@launch
+                }
+                // 更新队列中的歌曲URL
+                playQueue[currentQueueIndex.intValue] = songWithUrl
+                applyFadeOut {
+                    startPlaying(songWithUrl, playQueue)
+                }
+                Log.d("MusicVM", "上一首: ${songWithUrl.name}, 索引: $currentQueueIndex")
+            }
+        } else {
+            applyFadeOut {
+                startPlaying(prevSong, playQueue)
+            }
+            Log.d("MusicVM", "上一首: ${prevSong.name}, 索引: $currentQueueIndex")
         }
-        Log.d("MusicVM", "上一首: ${prevSong.name}, 索引: $currentQueueIndex")
     }
     
    // 播放控制
@@ -1322,16 +1561,20 @@ fun togglePlay() {
         
         if (toIndex < 0 || toIndex > playQueue.size - rangeSize) return
         
-        val songsToMove = sortedIndices.map { playQueue[it] }
-        
+        // 构建新队列（先删后插），一次性替换避免逐个修改触发 Compose 并发闪退
+        val newQueue = playQueue.toMutableList()
         for (i in sortedIndices.reversed()) {
-            playQueue.removeAt(i)
+            if (i < newQueue.size) newQueue.removeAt(i)
         }
-        
+        val songsToMove = sortedIndices.mapNotNull { idx -> playQueue.getOrNull(idx) }
         for ((i, song) in songsToMove.withIndex()) {
-            playQueue.add(toIndex + i, song)
+            val insertPos = (toIndex + i).coerceAtMost(newQueue.size)
+            newQueue.add(insertPos, song)
         }
-        
+
+        playQueue.clear()
+        playQueue.addAll(newQueue)
+
         val newIndices = (toIndex until toIndex + rangeSize).toSet()
         
         when {
@@ -1480,24 +1723,92 @@ fun togglePlay() {
     }
     
     // 辅助方法
-    private fun parseLrc(lrc: String): List<LrcLine> {
-        val lines = mutableListOf<LrcLine>()
-        val regex = Regex("\\[(\\d{2}):(\\d{2})[\\.:](\\d{2,3})\\](.*)")
-        val timestampRegex = Regex("\\[(\\d{2}):(\\d{2})[\\.:](\\d{2,3})\\]")
-        
-        lrc.lines().forEach { line ->
-            val match = regex.find(line)
-            if (match != null) {
-                val time = match.groupValues[1].toLong() * 60000 + 
-                          match.groupValues[2].toLong() * 1000 + 
-                          (match.groupValues[3].toLong().let { if (it < 100) it * 10 else it })
-                
-                // 移除文本中的所有时间戳标记
-                val text = timestampRegex.replace(match.groupValues[4].trim(), "").trim()
-                lines.add(LrcLine(time, text))
+    private val yrcLineRegex = Regex("""\[\d+,\s*\d+]\(\d+,""")
+    
+    /** 自动检测并解析歌词：YRC → 逐字, LRC → 逐行 */
+    private fun parseLyricAuto(content: String): List<LyricEntry> {
+        if (content.isBlank()) return emptyList()
+        return if (yrcLineRegex.containsMatchIn(content)) {
+            parseYrc(content)
+        } else {
+            parseLrc(content)
+        }
+    }
+
+    /** 解析 YRC 逐字歌词 */
+    private fun parseYrc(yrc: String): List<LyricEntry> {
+        val out = mutableListOf<LyricEntry>()
+        val headerRegex = Regex("""\[(\d+),\s*(\d+)]""")
+        val segRegex = Regex("""\((\d+),\s*(\d+),\s*[-\d]+\)([^()\n\r]+)""")
+
+        yrc.lineSequence().forEach { raw ->
+            val line = raw.trim()
+            if (line.isEmpty()) return@forEach
+            if (!line.startsWith("[")) return@forEach
+
+            val header = headerRegex.find(line) ?: return@forEach
+            val start = header.groupValues[1].toLong()
+            val dur = header.groupValues[2].toLong()
+            val end = start + dur
+
+            val segs = segRegex.findAll(line).toList()
+            if (segs.isEmpty()) {
+                val text = line.substringAfter("]").trim()
+                if (text.isNotEmpty()) out.add(LyricEntry(start, end, text))
+            } else {
+                val words = mutableListOf<WordTiming>()
+                val sb = StringBuilder()
+                for (m in segs) {
+                    val ws = m.groupValues[1].toLong()
+                    val wd = m.groupValues[2].toLong()
+                    val we = ws + wd
+                    val t = m.groupValues[3]
+                    sb.append(t)
+                    words.add(WordTiming(ws, we, t.length))
+                }
+                out.add(LyricEntry(start, end, sb.toString(), words))
             }
         }
-        return lines.sortedBy { it.time }
+        return out.sortedBy { it.startTimeMs }
+    }
+
+    /** 解析 LRC 逐行歌词（跳过空行和元数据行） */
+    private fun parseLrc(lrc: String): List<LyricEntry> {
+        val tag = Regex("""\[(\d{2}):(\d{2})(?:[.:](\d{2,3}))?]""")
+        val timeline = mutableListOf<Pair<Long, String>>()
+
+        lrc.lineSequence().forEach { raw ->
+            val line = raw.trim()
+            if (line.isEmpty()) return@forEach
+            // 跳过 JSON/元数据片段
+            if (line.startsWith("{") || line.startsWith("}")) return@forEach
+            if (line.startsWith("[ti:") || line.startsWith("[ar:") || line.startsWith("[al:") ||
+                line.startsWith("[by:") || line.startsWith("[offset:")) return@forEach
+
+            val m = tag.find(line) ?: return@forEach
+            val mm = m.groupValues[1].toInt()
+            val ss = m.groupValues[2].toInt()
+            val msStr = m.groupValues.getOrNull(3).orEmpty()
+            val ms = when (msStr.length) {
+                0 -> 0
+                2 -> msStr.toInt() * 10
+                else -> msStr.toInt()
+            }
+            val time = mm * 60_000L + ss * 1_000L + ms
+            val text = line.substring(m.range.last + 1).trim()
+            if (text.isNotEmpty()) {
+                timeline.add(time to text)
+            }
+        }
+
+        timeline.sortBy { it.first }
+        val out = mutableListOf<LyricEntry>()
+        for (i in timeline.indices) {
+            val (start, text) = timeline[i]
+            val end = if (i < timeline.lastIndex) timeline[i + 1].first else start + 5_000L
+            out.add(LyricEntry(start, end, text))
+        }
+        return out
     }
 
     private fun startProgressUpdater() {
@@ -1509,13 +1820,13 @@ fun togglePlay() {
                 
                 mediaSessionManager.updatePlaybackState(true, currentPos)
                 
-                val idx = currentLrc.indexOfLast { it.time <= player.currentPosition }
+                val idx = currentLrc.indexOfLast { it.startTimeMs <= player.currentPosition }
                 if (idx != -1) {
                     currentLineIndex.intValue = idx
                     // 更新桌面歌词
                     DesktopLyricService.updateLyric(currentLrc, idx, true)
                 }
-                delay(500)  // 每500ms更新一次
+                delay(50)  // 每50ms更新一次，保证逐字歌词流畅
             }
         }
     }
@@ -1532,7 +1843,7 @@ fun togglePlay() {
         val pJson = prefs.getString("play_history", null)
         if (!pJson.isNullOrEmpty()) {
             val list: List<Song> = gson.fromJson(pJson, object : TypeToken<List<Song>>() {}.type)
-            historyList.addAll(list)
+            historyList.addAll(list.map { Song.normalize(it) })
         }
         val sJson = prefs.getString("search_history", null)
         if (!sJson.isNullOrEmpty()) {
@@ -1774,6 +2085,7 @@ fun togglePlay() {
         viewModelScope.launch {
             try {
                 var lrcContent = ""
+                var translatedLrcContent: String? = null
                 
                 if (song.isLocal) {
                     val customLyrics = SongCustomDataStore.getLyrics(context, song.url)
@@ -1795,6 +2107,10 @@ fun togglePlay() {
                     val customLyrics = SongCustomDataStore.getLyrics(context, song.url)
                     if (customLyrics.isNotEmpty()) {
                         lrcContent = customLyrics
+                    } else if (song.source == SongSource.NETEASE) {
+                        val (neteaseLrc, neteaseTrans) = fetchNeteaseLyric(song)
+                        lrcContent = neteaseLrc ?: ""
+                        translatedLrcContent = neteaseTrans
                     } else {
                         val localLrcPath = DownloadManager.getLocalLrcPath(context, song)
                         lrcContent = if (localLrcPath != null) {
@@ -1811,14 +2127,19 @@ fun togglePlay() {
                 }
                 
                 currentLrc.clear()
+                currentTranslatedLrc.clear()
                 if (lrcContent.isNotEmpty()) {
-                    currentLrc.addAll(parseLrc(lrcContent))
+                    currentLrc.addAll(parseLyricAuto(lrcContent))
                 } else {
-                    currentLrc.add(LrcLine(0, "暂无歌词"))
+                    currentLrc.add(LyricEntry(0, 5000, "暂无歌词"))
+                }
+                if (!translatedLrcContent.isNullOrBlank()) {
+                    currentTranslatedLrc.addAll(parseLyricAuto(translatedLrcContent))
                 }
             } catch (e: Exception) {
                 currentLrc.clear()
-                currentLrc.add(LrcLine(0, "暂无歌词"))
+                currentTranslatedLrc.clear()
+                currentLrc.add(LyricEntry(0, 5000, "暂无歌词"))
             }
         }
         
@@ -1983,7 +2304,8 @@ fun togglePlay() {
             val gson = Gson()
             val json = prefs.getString("play_history", null) ?: return emptyList()
             return try {
-                gson.fromJson(json, object : TypeToken<List<Song>>() {}.type)
+                val list = gson.fromJson(json, object : TypeToken<List<Song>>() {}.type) as List<Song>
+                list.map { Song.normalize(it) }
             } catch (e: Exception) {
                 emptyList()
             }

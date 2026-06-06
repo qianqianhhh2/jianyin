@@ -28,6 +28,33 @@ object DownloadSettingsStore {
     // 旧版key用于迁移
     private const val KEY_CUSTOM_PATH_OLD = "custom_download_path"
 
+    val NETEASE_QUALITY_FALLBACK_ORDER = listOf(
+        "jymaster", "sky", "jyeffect", "hires", "lossless", "exhigh", "higher", "standard"
+    )
+
+    fun netEaseQualityLabel(key: String): String = when (key) {
+        "standard" -> "标准 (128kbps)"
+        "higher" -> "较高 (192kbps)"
+        "exhigh" -> "极高 (320kbps)"
+        "lossless" -> "无损 (CD级)"
+        "hires" -> "Hi-Res (高解析)"
+        "jyeffect" -> "高清环绕声"
+        "sky" -> "沉浸环绕声"
+        "jymaster" -> "母带"
+        else -> key
+    }
+
+    fun netEaseQualityToBitrate(level: String): Int = when (level.lowercase()) {
+        "standard" -> 128000
+        "higher" -> 192000
+        "exhigh" -> 320000
+        "lossless", "hires", "jyeffect", "sky", "jymaster" -> 1411200
+        else -> 320000
+    }
+
+    val qualityOptions: List<String>
+        get() = NETEASE_QUALITY_FALLBACK_ORDER.reversed()
+
     private val _darkModeFlow = MutableStateFlow(0)
     val darkModeFlow: StateFlow<Int> = _darkModeFlow.asStateFlow()
 
@@ -98,44 +125,30 @@ object DownloadSettingsStore {
     }
     
     /**
-     * 获取下载音质设置
-     * @param context 上下文
-     * @return 音质值，默认 192
+     * 获取下载音质设置 (Neri 风格 level key)
      */
-    fun getDownloadQuality(context: Context): Int {
+    fun getDownloadQuality(context: Context): String {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getInt(KEY_DOWNLOAD_QUALITY, 320)
+            .getString(KEY_DOWNLOAD_QUALITY, "exhigh") ?: "exhigh"
     }
-    
-    /**
-     * 设置下载音质
-     * @param context 上下文
-     * @param quality 音质值
-     */
-    fun setDownloadQuality(context: Context, quality: Int) {
+
+    fun setDownloadQuality(context: Context, quality: String) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putInt(KEY_DOWNLOAD_QUALITY, quality)
+            .putString(KEY_DOWNLOAD_QUALITY, quality)
             .apply()
     }
-    
+
     /**
-     * 获取播放音质设置
-     * @param context 上下文
-     * @return 音质值，默认 192
+     * 获取播放音质设置 (Neri 风格 level key)
      */
-    fun getPlayQuality(context: Context): Int {
+    fun getPlayQuality(context: Context): String {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getInt(KEY_PLAY_QUALITY, 320)
+            .getString(KEY_PLAY_QUALITY, "exhigh") ?: "exhigh"
     }
-    
-    /**
-     * 设置播放音质
-     * @param context 上下文
-     * @param quality 音质值
-     */
-    fun setPlayQuality(context: Context, quality: Int) {
+
+    fun setPlayQuality(context: Context, quality: String) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putInt(KEY_PLAY_QUALITY, quality)
+            .putString(KEY_PLAY_QUALITY, quality)
             .apply()
     }
     

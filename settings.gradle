@@ -19,3 +19,4 @@ rootProject.name = "jianyin"
 
 include(":app")
 include(":bili-api")
+include(":netease-api")

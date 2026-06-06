@@ -8,334 +8,218 @@ import com.google.gson.reflect.TypeToken
 import java.io.File
 import java.io.FileReader
 import java.io.FileWriter
-import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
  * 备份管理类
+ *
+ * 备份范围：播放次数、设置（不含账号）、播放记录、自定义歌单（喜欢的歌曲 + 自建歌单）。
+ * 不备份：平台自动同步的歌单（B站 bili_*、网易云在线歌单），这些可通过联网同步恢复。
  */
 class BackupManager(private val context: Context) {
     companion object {
         private const val BACKUP_DIR = "download/jianyin/backup"
         private const val TAG = "BackupManager"
+        private const val FAVORITES_PLAYLIST_ID = "jianyin_favorites_playlist"
     }
-    
-    /**
-     * 创建备份文件
-     * @return 备份文件的绝对路径
-     * @throws Exception 备份失败时抛出异常
-     */
+
+    /** 是否为自定义歌单（喜欢的歌曲 或 用户自建） */
+    private fun isCustomPlaylist(p: UserSyncedPlaylist): Boolean =
+        p.id == FAVORITES_PLAYLIST_ID || p.isLocalPlaylist || p.id.startsWith("local_")
+
+    // ── 备份 ──────────────────────────────────────────────────
+
     fun backupData(): String {
         try {
-            // 创建备份目录
             val backupDir = getBackupDirectory()
-            if (!backupDir.exists()) {
-                backupDir.mkdirs()
-            }
-            
-            // 生成备份文件名
+            if (!backupDir.exists()) backupDir.mkdirs()
+
             val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.CHINA)
             val fileName = "jianyin_backup_${dateFormat.format(Date())}.json"
             val backupFile = File(backupDir, fileName)
-            
-            // 收集数据
+
             val backupData = collectBackupData()
-            
-            // 写入文件
-            val gson = Gson()
-            val json = gson.toJson(backupData)
-            
-            FileWriter(backupFile).use {
-                it.write(json)
-            }
-            
+            val json = Gson().toJson(backupData)
+
+            FileWriter(backupFile).use { it.write(json) }
             return backupFile.absolutePath
         } catch (e: Exception) {
             Log.e(TAG, "备份失败", e)
             throw e
         }
     }
-    
-    /**
-     * 恢复备份数据
-     * @param backupFile 备份文件
-     * @return 是否恢复成功
-     */
+
+    private fun collectBackupData(): BackupData {
+        val allPlaylists = PlaylistDataStore.getAll(context)
+        // 只保留自定义歌单（喜欢的歌曲 + 用户自建），排除平台同步歌单
+        val customPlaylists = allPlaylists.filter { isCustomPlaylist(it) }
+
+        return BackupData(
+            customPlaylists = customPlaylists,
+            playCounts = MusicStatsManager.getPlayCounts(context),
+            history = MusicViewModel.getHistoryList(context),
+            settings = collectSettings()
+        )
+    }
+
+    private fun collectSettings(): Map<String, Any> = mapOf(
+        "playQuality" to DownloadSettingsStore.getPlayQuality(context),
+        "downloadQuality" to DownloadSettingsStore.getDownloadQuality(context),
+        "lyricSource" to DownloadSettingsStore.getLyricSource(context),
+        "darkMode" to DownloadSettingsStore.getDarkMode(context),
+        "fadeEnabled" to DownloadSettingsStore.isFadeEnabled(context),
+        "autoCacheEnabled" to DownloadSettingsStore.isAutoCacheEnabled(context),
+        "defaultOpener" to DownloadSettingsStore.isDefaultMusicOpenerEnabled(context),
+        "keepPlaylistOnExit" to DownloadSettingsStore.isKeepPlaylistOnExitEnabled(context),
+        "autoPlayOnStart" to DownloadSettingsStore.isAutoPlayOnStartEnabled(context),
+        "useCustomPath" to DownloadSettingsStore.isUsingCustomPath(context),
+        "customUri" to (DownloadSettingsStore.getCustomUri(context)?.toString() ?: "")
+    )
+
+    // ── 恢复 ──────────────────────────────────────────────────
+
     fun restoreData(backupFile: File): Boolean {
         try {
-            // 读取备份文件
             val gson = Gson()
             val json = FileReader(backupFile).use { it.readText() }
-            
-            // 尝试解析为新版本的 BackupData
+
+            // 尝试新版本 BackupData
             try {
                 val type = object : TypeToken<BackupData>() {}.type
                 val backupData = gson.fromJson<BackupData>(json, type)
-                
-                // 恢复数据
-                if (backupData.playlistIds.isNotEmpty()) {
-                    // 使用歌单ID列表恢复（新版本）
-                    restorePlaylistIds(backupData.playlistIds)
-                } else {
-                    // 使用歌单列表恢复（兼容旧版本）
-                    restorePlaylistData(backupData.playlists)
-                }
-                restoreFavoritesData(backupData.favorites)
+                restoreCustomPlaylists(backupData.customPlaylists)
                 restorePlayCountData(backupData.playCounts)
                 restoreHistoryData(backupData.history)
                 restoreSettingsData(backupData.settings)
-            } catch (e: Exception) {
-                // 解析失败，尝试兼容旧版本
-                val oldType = object : TypeToken<Map<String, Any>>() {}.type
-                val oldData = gson.fromJson<Map<String, Any>>(json, oldType)
-                
-                // 恢复旧版本数据
-                @Suppress("UNCHECKED_CAST")
-                val oldPlaylists = oldData["playlists"] as? List<Map<String, Any>> ?: emptyList()
-                val playlists = oldPlaylists.map { map ->
-                    UserSyncedPlaylist(
-                        id = map["id"] as? String ?: "",
-                        name = map["name"] as? String ?: "",
-                        coverPic = map["coverPic"] as? String ?: "",
-                        songs = (map["songs"] as? List<Map<String, Any>> ?: emptyList()).map { songMap ->
-                            Song(
-                                id = songMap["id"] as? String ?: "",
-                                name = songMap["name"] as? String ?: "",
-                                artist = songMap["artist"] as? String ?: "",
-                                url = songMap["url"] as? String ?: "",
-                                pic = songMap["pic"] as? String ?: "",
-                                lrc = songMap["lrc"] as? String ?: ""
-                            )
-                        }
-                    )
-                }
-                
-                @Suppress("UNCHECKED_CAST")
-                val favorites = (oldData["favorites"] as? List<Map<String, Any>> ?: emptyList()).map { songMap ->
-                    Song(
-                        id = songMap["id"] as? String ?: "",
-                        name = songMap["name"] as? String ?: "",
-                        artist = songMap["artist"] as? String ?: "",
-                        url = songMap["url"] as? String ?: "",
-                        pic = songMap["pic"] as? String ?: "",
-                        lrc = songMap["lrc"] as? String ?: ""
-                    )
-                }
-                
-                @Suppress("UNCHECKED_CAST")
-                val playCounts = oldData["playCounts"] as? Map<String, Int> ?: emptyMap()
-                
-                @Suppress("UNCHECKED_CAST")
-                val history = (oldData["history"] as? List<Map<String, Any>> ?: emptyList()).map { songMap ->
-                    Song(
-                        id = songMap["id"] as? String ?: "",
-                        name = songMap["name"] as? String ?: "",
-                        artist = songMap["artist"] as? String ?: "",
-                        url = songMap["url"] as? String ?: "",
-                        pic = songMap["pic"] as? String ?: "",
-                        lrc = songMap["lrc"] as? String ?: ""
-                    )
-                }
-                
-                @Suppress("UNCHECKED_CAST")
-                val settings = oldData["settings"] as? Map<String, Any> ?: emptyMap()
-                
-                // 恢复旧版本数据
-                restorePlaylistData(playlists)
-                restoreFavoritesData(favorites)
-                restorePlayCountData(playCounts)
-                restoreHistoryData(history)
-                restoreSettingsData(settings)
+            } catch (_: Exception) {
+                // 兼容旧版本备份格式
+                restoreLegacyFormat(gson, json)
             }
-            
             return true
         } catch (e: Exception) {
             Log.e(TAG, "恢复失败", e)
             return false
         }
     }
-    
-    /**
-     * 收集备份数据
-     * @return 备份数据对象
-     */
-    private fun collectBackupData(): BackupData {
-        val settings = mapOf(
-            "playQuality" to DownloadSettingsStore.getPlayQuality(context),
-            "downloadQuality" to DownloadSettingsStore.getDownloadQuality(context),
-            "lyricSource" to DownloadSettingsStore.getLyricSource(context),
-            "useCustomPath" to DownloadSettingsStore.isUsingCustomPath(context),
-            "customUri" to (DownloadSettingsStore.getCustomUri(context)?.toString() ?: "")
-        )
+
+    @Suppress("UNCHECKED_CAST")
+    private fun restoreLegacyFormat(gson: Gson, json: String) {
+        val oldType = object : TypeToken<Map<String, Any>>() {}.type
+        val oldData = gson.fromJson<Map<String, Any>>(json, oldType)
+
+        val oldSongsMapper = { map: Map<String, Any> -> mapToSong(map) }
+
+        // 自定义歌单：旧版中 favorites 字段 + playlists 中的 local 歌单
+        val oldPlaylists = (oldData["playlists"] as? List<Map<String, Any>> ?: emptyList()).map {
+            UserSyncedPlaylist(
+                id = it["id"] as? String ?: "",
+                name = it["name"] as? String ?: "",
+                coverPic = it["coverPic"] as? String ?: "",
+                songs = (it["songs"] as? List<Map<String, Any>> ?: emptyList()).map(oldSongsMapper),
+                isLocalPlaylist = it["isLocalPlaylist"] as? Boolean ?: false
+            )
+        }
+        val customPlaylists = oldPlaylists.filter { isCustomPlaylist(it) }
+
+        // 旧版 favorites 可能不在 playlists 中，作为独立歌单恢复
+        val oldFavorites = (oldData["favorites"] as? List<Map<String, Any>> ?: emptyList()).map(oldSongsMapper)
+        val hasFavPlaylist = customPlaylists.any { it.id == FAVORITES_PLAYLIST_ID }
+        if (oldFavorites.isNotEmpty() && !hasFavPlaylist) {
+            val favPlaylist = UserSyncedPlaylist(
+                id = FAVORITES_PLAYLIST_ID,
+                name = "我喜欢的音乐",
+                coverPic = oldFavorites.firstOrNull()?.pic ?: "",
+                songs = oldFavorites
+            )
+            restoreCustomPlaylists(customPlaylists + favPlaylist)
+        } else {
+            restoreCustomPlaylists(customPlaylists)
+        }
+
+        val playCounts = (oldData["playCounts"] as? Map<String, Int>) ?: emptyMap()
+        restorePlayCountData(playCounts)
+
+        val history = (oldData["history"] as? List<Map<String, Any>> ?: emptyList()).map(oldSongsMapper)
+        restoreHistoryData(history)
+
+        val settings = (oldData["settings"] as? Map<String, Any>) ?: emptyMap()
+        restoreSettingsData(settings)
+    }
+
+    private fun restoreCustomPlaylists(customPlaylists: List<UserSyncedPlaylist>) {
+        // 移除所有自定义歌单，保留平台歌单不动
         val allPlaylists = PlaylistDataStore.getAll(context)
-        // 收集歌单ID列表，排除收藏歌单
-        val playlistIds = allPlaylists.filter { it.id != "jianyin_favorites_playlist" }.map { it.id }
-        return BackupData(
-            playlists = allPlaylists,
-            playlistIds = playlistIds,
-            favorites = PlaylistDataStore.getFavoritesPlaylist(context).songs,
-            playCounts = MusicStatsManager.getPlayCounts(context),
-            history = MusicViewModel.getHistoryList(context),
-            settings = settings
-        )
-    }
-    
-    /**
-     * 恢复歌单数据
-     * @param playlists 歌单列表
-     */
-    private fun restorePlaylistData(playlists: List<UserSyncedPlaylist>) {
-        // 清空现有歌单
+        val platformPlaylists = allPlaylists.filter { !isCustomPlaylist(it) }
+
         PlaylistDataStore.clearAll(context)
-        // 恢复歌单
-        playlists.forEach {
-            PlaylistDataStore.save(context, it)
-        }
+        // 先恢复平台歌单
+        platformPlaylists.forEach { PlaylistDataStore.save(context, it) }
+        // 再写入自定义歌单
+        customPlaylists.forEach { PlaylistDataStore.save(context, it) }
     }
-    
-    /**
-     * 恢复收藏数据
-     * @param favorites 收藏歌曲列表
-     */
-    private fun restoreFavoritesData(favorites: List<Song>) {
-        // 清空收藏
-        val favoritesPlaylist = PlaylistDataStore.getFavoritesPlaylist(context)
-        val updatedPlaylist = favoritesPlaylist.copy(songs = emptyList())
-        PlaylistDataStore.save(context, updatedPlaylist)
-        // 恢复收藏
-        favorites.forEach {
-            PlaylistDataStore.addToFavorites(context, it)
-        }
-    }
-    
-    /**
-     * 恢复播放次数数据
-     * @param playCounts 播放次数映射
-     */
+
     private fun restorePlayCountData(playCounts: Map<String, Int>) {
         MusicStatsManager.savePlayCounts(context, playCounts)
     }
-    
-    /**
-     * 恢复历史记录数据
-     * @param history 历史记录列表
-     */
+
     private fun restoreHistoryData(history: List<Song>) {
         MusicViewModel.saveHistoryList(context, history)
     }
-    
-    /**
-     * 恢复设置数据
-     * @param settings 设置数据映射
-     */
+
     private fun restoreSettingsData(settings: Map<String, Any>) {
-        // 恢复播放音质
-        settings["playQuality"]?.let {
-            if (it is Number) {
-                DownloadSettingsStore.setPlayQuality(context, it.toInt())
-            }
-        }
-        // 恢复下载音质
-        settings["downloadQuality"]?.let {
-            if (it is Number) {
-                DownloadSettingsStore.setDownloadQuality(context, it.toInt())
-            }
-        }
-        // 恢复歌词来源
-        settings["lyricSource"]?.let {
-            if (it is Number) {
-                DownloadSettingsStore.setLyricSource(context, it.toInt())
-            }
-        }
-        // 恢复自定义路径设置（支持旧版customPath和新版customUri）
-        val useCustomPath = settings["useCustomPath"] as? Boolean ?: false
-        val customUriStr = settings["customUri"] as? String ?: ""
-        // 兼容旧版备份数据
-        val oldCustomPath = settings["customPath"] as? String ?: ""
-        
-        if (useCustomPath && customUriStr.isNotEmpty()) {
-            DownloadSettingsStore.setCustomUri(context, android.net.Uri.parse(customUriStr))
-        } else if (useCustomPath && oldCustomPath.isNotEmpty()) {
-            // 旧版备份数据，不恢复路径（需要用户重新授权）
-            DownloadSettingsStore.setCustomUri(context, null)
-        } else {
-            DownloadSettingsStore.setCustomUri(context, null)
-        }
-    }
-    
-    /**
-     * 根据歌单ID列表恢复歌单
-     * @param playlistIds 歌单ID列表
-     */
-    private fun restorePlaylistIds(playlistIds: List<String>) {
-        // 清空现有歌单（保留收藏歌单）
-        val allPlaylists = PlaylistDataStore.getAll(context)
-        val favoritesPlaylist = allPlaylists.find { it.id == "jianyin_favorites_playlist" }
-        PlaylistDataStore.clearAll(context)
-        // 恢复收藏歌单
-        favoritesPlaylist?.let {
-            PlaylistDataStore.save(context, it)
-        }
-        
-        // 恢复在线歌单
-        kotlinx.coroutines.runBlocking {
-            playlistIds.forEach { playlistId ->
-                try {
-                    val songs = PlaylistSyncManager.fetchPlaylist(playlistId, context)
-                    if (songs != null && songs.isNotEmpty()) {
-                        // 创建歌单对象
-                        val playlist = UserSyncedPlaylist(
-                            id = playlistId,
-                            name = "歌单 $playlistId", // 暂时使用ID作为名称，实际应用中可能需要从网络获取歌单名称
-                            coverPic = songs.firstOrNull()?.pic ?: "",
-                            songs = songs
-                        )
-                        PlaylistDataStore.save(context, playlist)
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "恢复歌单失败: $playlistId", e)
-                }
+        with(DownloadSettingsStore) {
+            settings["playQuality"]?.toString()?.let { setPlayQuality(context, it) }
+            settings["downloadQuality"]?.toString()?.let { setDownloadQuality(context, it) }
+            (settings["lyricSource"] as? Number)?.let { setLyricSource(context, it.toInt()) }
+            (settings["darkMode"] as? Number)?.let { setDarkMode(context, it.toInt()) }
+            (settings["fadeEnabled"] as? Boolean)?.let { setFadeEnabled(context, it) }
+            (settings["autoCacheEnabled"] as? Boolean)?.let { setAutoCacheEnabled(context, it) }
+            (settings["defaultOpener"] as? Boolean)?.let { setDefaultMusicOpenerEnabled(context, it) }
+            (settings["keepPlaylistOnExit"] as? Boolean)?.let { setKeepPlaylistOnExitEnabled(context, it) }
+            (settings["autoPlayOnStart"] as? Boolean)?.let { setAutoPlayOnStartEnabled(context, it) }
+            val useCustomPath = settings["useCustomPath"] as? Boolean ?: false
+            val customUriStr = settings["customUri"] as? String ?: ""
+            val oldCustomPath = settings["customPath"] as? String ?: ""
+            if (useCustomPath && customUriStr.isNotEmpty()) {
+                setCustomUri(context, android.net.Uri.parse(customUriStr))
+            } else if (!useCustomPath || (customUriStr.isEmpty() && oldCustomPath.isEmpty())) {
+                setCustomUri(context, null)
             }
         }
     }
-    
-    /**
-     * 获取备份目录
-     * @return 备份目录文件对象
-     */
-    fun getBackupDirectory(): File {
-        return File(Environment.getExternalStorageDirectory(), BACKUP_DIR)
-    }
-    
-    /**
-     * 获取所有备份文件
-     * @return 备份文件列表，按修改时间降序排列
-     */
+
+    private fun mapToSong(map: Map<String, Any>): Song = Song(
+        id = map["id"] as? String ?: "",
+        name = map["name"] as? String ?: "",
+        artist = map["artist"] as? String ?: "",
+        url = map["url"] as? String ?: "",
+        pic = map["pic"] as? String ?: "",
+        lrc = map["lrc"] as? String ?: "",
+        source = (map["source"] as? String)?.let { try { SongSource.valueOf(it) } catch (_: Exception) { null } } ?: SongSource.NETEASE,
+        isLocal = map["isLocal"] as? Boolean ?: false,
+        isBiliVideo = map["isBiliVideo"] as? Boolean ?: false,
+        bvid = map["bvid"] as? String ?: "",
+        cid = (map["cid"] as? Number)?.toLong() ?: 0L
+    )
+
+    // ── 文件操作 ──────────────────────────────────────────────
+
+    fun getBackupDirectory(): File =
+        File(Environment.getExternalStorageDirectory(), BACKUP_DIR)
+
     fun getBackupFiles(): List<File> {
         val backupDir = getBackupDirectory()
         if (!backupDir.exists()) return emptyList()
-        
-        return backupDir.listFiles { file ->
-            file.isFile && file.name.endsWith(".json")
-        }?.sortedByDescending { it.lastModified() } ?: emptyList()
+        return backupDir.listFiles { it.isFile && it.name.endsWith(".json") }
+            ?.sortedByDescending { it.lastModified() } ?: emptyList()
     }
-    
-    /**
-     * 备份数据类
-     * 包含所有需要备份的数据
-     * @property playlists 同步的歌单列表（兼容旧版本）
-     * @property playlistIds 同步的歌单ID列表（新版本）
-     * @property favorites 收藏的歌曲列表
-     * @property playCounts 每首歌的听歌次数映射
-     * @property history 历史记录列表
-     * @property settings 设置数据
-     */
+
+    // ── 数据类 ────────────────────────────────────────────────
+
     data class BackupData(
-        val playlists: List<UserSyncedPlaylist>,
-        val playlistIds: List<String>,
-        val favorites: List<Song>,
+        val customPlaylists: List<UserSyncedPlaylist>,
         val playCounts: Map<String, Int>,
         val history: List<Song>,
         val settings: Map<String, Any>

@@ -1,4 +1,4 @@
-package moe.ouom.biliapi.data.auth
+package com.qian.jianyin.data.auth
 
 import android.content.Context
 import android.content.SharedPreferences

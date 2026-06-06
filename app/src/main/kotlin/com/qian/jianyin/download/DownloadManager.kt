@@ -8,7 +8,8 @@ import android.util.Log
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.biliapi.BiliApi
+import com.qian.jianyin.bili.BiliApi
+import com.qian.jianyin.netease.api.NeteaseApiService
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -78,7 +79,7 @@ object DownloadManager {
             val results = mutableListOf<String>()
             
             var audioUrl = song.url
-            
+
             // 处理B站视频
             if (song.isBiliVideo && song.bvid.isNotEmpty()) {
                 val biliApi = BiliApi.getInstance(context)
@@ -89,7 +90,22 @@ object DownloadManager {
                     throw Exception("无法获取B站音频流")
                 }
             }
-            
+
+            // 处理网易云歌曲
+            var neteaseLrc: String? = null
+            if (song.source == SongSource.NETEASE) {
+                val qualityLevel = DownloadSettingsStore.getDownloadQuality(context)
+                val downloadInfo = NeteaseApiService.getSongDownloadUrl(song.id, qualityLevel)
+                if (downloadInfo != null && downloadInfo.url.isNotBlank()) {
+                    audioUrl = downloadInfo.url
+                    Log.d("DownloadManager", "网易云下载URL (quality=$qualityLevel): ${downloadInfo.url.take(80)}...")
+                } else {
+                    throw Exception("无法获取网易云下载链接，请先登录")
+                }
+                // 同时获取歌词
+                neteaseLrc = NeteaseApiService.getLyric(song.id)
+            }
+
             audioUrl.let { url ->
                 val audioFileName = "${sanitizeFileName(song.name)}.mp3"
                 if (!fileExists(context, songDirUri, audioFileName)) {
@@ -98,28 +114,30 @@ object DownloadManager {
                     results.add("音频文件")
                 }
             }
-            
+
             song.pic.let { url ->
                 if (!fileExists(context, songDirUri, "cover.jpg")) {
                     downloadFileToUri(context, url, songDirUri, "cover.jpg", null, false)
                     results.add("封面图片")
                 }
             }
-            
-            song.lrc?.let { url ->
+
+            // 优先使用网易云歌词，其次使用 song.lrc
+            val lrcToDownload = neteaseLrc ?: song.lrc
+            lrcToDownload?.let {
                 if (!fileExists(context, songDirUri, "lyrics.lrc")) {
-                    downloadFileToUri(context, url, songDirUri, "lyrics.lrc", null, false)
+                    writeTextToUri(context, songDirUri, "lyrics.lrc", it)
                     results.add("歌词文件")
                 }
             }
-            
+
             val metadata = SongMetadata(
                 id = song.id,
                 name = song.name,
                 artist = song.artist,
                 url = audioUrl,
                 pic = song.pic,
-                lrc = song.lrc,
+                lrc = neteaseLrc ?: song.lrc,
                 isBiliVideo = song.isBiliVideo,
                 bvid = song.bvid,
                 cid = song.cid

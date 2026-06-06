@@ -59,11 +59,14 @@ import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.min
-import moe.ouom.biliapi.BiliWebLoginHelper
-import moe.ouom.biliapi.BiliApi
+import com.qian.jianyin.bili.BiliWebLoginHelper
+import com.qian.jianyin.bili.BiliApi
+import com.qian.jianyin.netease.api.NeteaseApiService
 import com.qian.jianyin.R
 import com.qian.jianyin.MainActivity
 import com.qian.jianyin.BuildConfig
@@ -107,8 +110,13 @@ fun SongItemV6(song: Song, cs: ColorScheme, onClick: () -> Unit) {
 @Composable
 fun PlaylistItemV6(playlist: UserSyncedPlaylist, colorScheme: ColorScheme, onClick: () -> Unit, onLongClick: () -> Unit) {
     val mikuPainter = painterResource(id = getRandomPlaceholderId())
+    val coverModel = playlist.coverPic.ifBlank { null }
     Row(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(model = playlist.coverPic, contentDescription = null, modifier = Modifier.size(54.dp).clip(RoundedCornerShape(10.dp)).background(colorScheme.surfaceVariant), contentScale = ContentScale.Crop, error = mikuPainter)
+        if (coverModel != null) {
+            AsyncImage(model = coverModel, contentDescription = null, modifier = Modifier.size(54.dp).clip(RoundedCornerShape(10.dp)).background(colorScheme.surfaceVariant), contentScale = ContentScale.Crop, error = mikuPainter)
+        } else {
+            Image(painter = mikuPainter, contentDescription = null, modifier = Modifier.size(54.dp).clip(RoundedCornerShape(10.dp)).background(colorScheme.surfaceVariant), contentScale = ContentScale.Crop)
+        }
         Column(Modifier.padding(start = 16.dp).weight(1f)) {
             Text(playlist.name, color = colorScheme.onBackground, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${playlist.songs.size} 首歌曲", color = colorScheme.onSurfaceVariant, fontSize = 13.sp)
@@ -151,9 +159,9 @@ fun MyMusicScreenV2(
     var useCustomPath by remember { mutableStateOf(false) }
     var customUri by remember { mutableStateOf<Uri?>(null) }
     // 音质设置相关状态
-    var showAudioQualityDialog by remember { mutableStateOf(false) }
-    var selectedDownloadQuality by remember { mutableStateOf(192) }
-    var selectedPlayQuality by remember { mutableStateOf(192) }
+    var showAudioQualityScreen by remember { mutableStateOf(false) }
+    var selectedDownloadQuality by remember { mutableStateOf("exhigh") }
+    var selectedPlayQuality by remember { mutableStateOf("exhigh") }
 
     // 歌词来源设置相关状态
     var showLyricSourceDialog by remember { mutableStateOf(false) }
@@ -196,6 +204,9 @@ fun MyMusicScreenV2(
 
     // 启动设置相关状态
     var showStartupSettingsDialog by remember { mutableStateOf(false) }
+    var showNeteaseLogoutDialog by remember { mutableStateOf(false) }
+    var showBiliLogoutDialog by remember { mutableStateOf(false) }
+    var showAccountExpand by remember { mutableStateOf(false) }
     var keepPlaylistOnExitEnabled by remember {
         mutableStateOf(
             DownloadSettingsStore.isKeepPlaylistOnExitEnabled(context)
@@ -395,8 +406,11 @@ fun MyMusicScreenV2(
                                     modifier = Modifier
                                         .width(120.dp)
                                         .clickable {
-                                            // 直接点击歌曲播放
-                                            vm.playSong(song, previewSongs)
+                                            if (song.source == SongSource.NETEASE) {
+                                                vm.playNeteaseSong(song, previewSongs)
+                                            } else {
+                                                vm.playSong(song, previewSongs)
+                                            }
                                         }
                                 ) {
                                     AsyncImage(
@@ -469,7 +483,13 @@ fun MyMusicScreenV2(
                             val itemHazeState = remember { HazeState() }
                             Box(
                                 modifier = Modifier.width(120.dp)
-                                    .clickable { vm.playSong(song, favoriteSongs) }) {
+                                    .clickable {
+                                        if (song.source == SongSource.NETEASE) {
+                                            vm.playNeteaseSong(song, favoriteSongs)
+                                        } else {
+                                            vm.playSong(song, favoriteSongs)
+                                        }
+                                    }) {
                                 AsyncImage(
                                     model = song.pic,
                                     contentDescription = null,
@@ -625,13 +645,26 @@ fun MyMusicScreenV2(
                             // 根据选择显示不同的输入界面
                             when (selectedSource) {
                                 0 -> {
-                                    OutlinedTextField(
-                                        value = playlistIdInput,
-                                        onValueChange = { playlistIdInput = it },
-                                        label = { Text("输入分享内容") },
-                                        placeholder = { Text("直接复制你从网易云复制的内容") },
-                                        singleLine = true
-                                    )
+                                    if (NeteaseApiService.isLoggedIn) {
+                                        Text("已登录网易云账号", color = colorScheme.primary)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        OutlinedTextField(
+                                            value = playlistIdInput,
+                                            onValueChange = { playlistIdInput = it },
+                                            label = { Text("输入分享内容") },
+                                            placeholder = { Text("直接复制你从网易云复制的内容") },
+                                            singleLine = true
+                                        )
+                                    } else {
+                                        Text("未登录网易云账号", color = colorScheme.error)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Button(onClick = {
+                                            showAddDialog = false
+                                            (context as MainActivity).startNeteaseLogin()
+                                        }) {
+                                            Text("登录")
+                                        }
+                                    }
                                 }
 
                                 1 -> {
@@ -672,44 +705,53 @@ fun MyMusicScreenV2(
                     confirmButton = {
                         when (selectedSource) {
                             0 -> {
-                                Button(onClick = {
-                                    if (playlistIdInput.isBlank()) return@Button
-                                    scope.launch {
-                                        val playlistId = extractPlaylistId(playlistIdInput)
-                                        if (playlistId.isNullOrBlank()) {
-                                            Toast.makeText(
-                                                context,
-                                                "无法提取歌单ID，请检查输入",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                            return@launch
+                                if (NeteaseApiService.isLoggedIn) {
+                                    Button(onClick = {
+                                        if (playlistIdInput.isBlank()) return@Button
+                                        scope.launch {
+                                            val playlistId = extractPlaylistId(playlistIdInput)
+                                            if (playlistId.isNullOrBlank()) {
+                                                Toast.makeText(
+                                                    context,
+                                                    "无法提取歌单ID，请检查输入",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                                return@launch
+                                            }
+                                            val songs =
+                                                PlaylistSyncManager.fetchPlaylist(playlistId, context)
+                                            if (songs != null) {
+                                                val newList = UserSyncedPlaylist(
+                                                    playlistId,
+                                                    "新歌单_${playlistId}",
+                                                    songs.firstOrNull()?.pic ?: "",
+                                                    songs
+                                                )
+                                                PlaylistDataStore.save(context, newList)
+                                                syncedPlaylists.clear()
+                                                syncedPlaylists.addAll(PlaylistDataStore.getAll(context))
+                                                showAddDialog = false
+                                                playlistIdInput = ""
+                                                Toast.makeText(context, "同步成功", Toast.LENGTH_SHORT)
+                                                    .show()
+                                            } else {
+                                                Toast.makeText(
+                                                    context,
+                                                    "同步失败，请检查分享内容",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
                                         }
-                                        val songs =
-                                            PlaylistSyncManager.fetchPlaylist(playlistId, context)
-                                        if (songs != null) {
-                                            val newList = UserSyncedPlaylist(
-                                                playlistId,
-                                                "新歌单_${playlistId}",
-                                                songs.firstOrNull()?.pic ?: "",
-                                                songs
-                                            )
-                                            PlaylistDataStore.save(context, newList)
-                                            syncedPlaylists.clear()
-                                            syncedPlaylists.addAll(PlaylistDataStore.getAll(context))
-                                            showAddDialog = false
-                                            playlistIdInput = ""
-                                            Toast.makeText(context, "同步成功", Toast.LENGTH_SHORT)
-                                                .show()
-                                        } else {
-                                            Toast.makeText(
-                                                context,
-                                                "同步失败，请检查分享内容",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
+                                    }) {
+                                        Text("同步")
                                     }
-                                }) {
-                                    Text("同步")
+                                } else {
+                                    Button(onClick = {
+                                        showAddDialog = false
+                                        (context as MainActivity).startNeteaseLogin()
+                                    }) {
+                                        Text("登录")
+                                    }
                                 }
                             }
 
@@ -921,29 +963,56 @@ fun MyMusicScreenV2(
                                                 Toast.LENGTH_SHORT
                                             ).show()
                                         }
-                                    } else {
-                                        // 网络歌单：从服务器获取
-                                        val songs =
-                                            PlaylistSyncManager.fetchPlaylist(target.id, context)
-                                        if (songs != null) {
-                                            // 更新歌单封面为第一首歌的封面
-                                            val newCoverPic = songs.firstOrNull()?.pic ?: ""
-                                            val updated = target.copy(
-                                                songs = songs,
-                                                coverPic = newCoverPic
-                                            )
+                                    } else if (target.id.startsWith("bili_")) {
+                                        // B站歌单：从B站API获取
+                                        val folderId = target.id.removePrefix("bili_").toLongOrNull()
+                                        if (folderId != null) {
+                                            val biliApi = BiliApi.getInstance(context)
+                                            val items = withContext(Dispatchers.IO) { biliApi.getFavFolderItems(folderId) }
+                                            val songs = items.map { item ->
+                                                Song(
+                                                    id = item.bvid,
+                                                    name = item.title,
+                                                    artist = item.owner,
+                                                    url = "",
+                                                    pic = item.pic,
+                                                    source = SongSource.BILI,
+                                                    isBiliVideo = true,
+                                                    bvid = item.bvid,
+                                                    cid = item.cid
+                                                )
+                                            }
+                                            val updated = target.copy(songs = songs, coverPic = songs.firstOrNull()?.pic ?: target.coverPic)
                                             PlaylistDataStore.update(context, updated)
-                                            // 更新 UI 列表
-                                            val index =
-                                                syncedPlaylists.indexOfFirst { it.id == target.id }
+                                            val index = syncedPlaylists.indexOfFirst { it.id == target.id }
                                             if (index != -1) syncedPlaylists[index] = updated
-                                            Toast.makeText(
-                                                context,
-                                                "已更新歌曲列表",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
+                                            Toast.makeText(context, "已更新歌曲列表", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(context, "无效的歌单ID", Toast.LENGTH_SHORT).show()
                                         }
-                                    }
+                                        } else {
+                                            // 网络歌单：从服务器获取
+                                            val songs =
+                                                PlaylistSyncManager.fetchPlaylist(target.id, context)
+                                            if (songs != null) {
+                                                // 更新歌单封面为第一首歌的封面
+                                                val newCoverPic = songs.firstOrNull()?.pic ?: ""
+                                                val updated = target.copy(
+                                                    songs = songs,
+                                                    coverPic = newCoverPic
+                                                )
+                                                PlaylistDataStore.update(context, updated)
+                                                // 更新 UI 列表
+                                                val index =
+                                                    syncedPlaylists.indexOfFirst { it.id == target.id }
+                                                if (index != -1) syncedPlaylists[index] = updated
+                                                Toast.makeText(
+                                                    context,
+                                                    "已更新歌曲列表",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        }
                                     selectedPlaylistForMenu = null
                                 }
                             }
@@ -1250,7 +1319,10 @@ fun MyMusicScreenV2(
                                     Text(
                                         playlist.name,
                                         fontSize = 18.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.fillMaxWidth(0.66f)
                                     )
                                 }
                             },
@@ -1574,16 +1646,29 @@ fun MyMusicScreenV2(
                                                     Text("${targetPlaylist.songs.size} 首歌曲")
                                                 },
                                                 leadingContent = {
-                                                    AsyncImage(
-                                                        model = targetPlaylist.coverPic,
-                                                        contentDescription = null,
-                                                        modifier = Modifier
-                                                            .size(48.dp)
-                                                            .clip(RoundedCornerShape(8.dp))
-                                                            .background(colorScheme.surfaceVariant),
-                                                        contentScale = ContentScale.Crop,
-                                                        error = painterResource(id = getRandomPlaceholderId())
-                                                    )
+                                                    val cover = targetPlaylist.coverPic.ifBlank { null }
+                                                    if (cover != null) {
+                                                        AsyncImage(
+                                                            model = cover,
+                                                            contentDescription = null,
+                                                            modifier = Modifier
+                                                                .size(48.dp)
+                                                                .clip(RoundedCornerShape(8.dp))
+                                                                .background(colorScheme.surfaceVariant),
+                                                            contentScale = ContentScale.Crop,
+                                                            error = painterResource(id = getRandomPlaceholderId())
+                                                        )
+                                                    } else {
+                                                        Image(
+                                                            painter = painterResource(id = getRandomPlaceholderId()),
+                                                            contentDescription = null,
+                                                            modifier = Modifier
+                                                                .size(48.dp)
+                                                                .clip(RoundedCornerShape(8.dp))
+                                                                .background(colorScheme.surfaceVariant),
+                                                            contentScale = ContentScale.Crop
+                                                        )
+                                                    }
                                                 },
                                                 modifier = Modifier.clickable {
                                                     val songsToAdd = selectedSongs.mapNotNull { index ->
@@ -1726,43 +1811,67 @@ fun MyMusicScreenV2(
                             LazyColumn(modifier = Modifier.fillMaxSize()) {
                                 if (filteredAndSortedSongs.isNotEmpty()) {
                                     item {
-                                        Box(
-                                            Modifier.fillMaxWidth().padding(vertical = 30.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
+                                        val hazeState = remember { HazeState() }
+                                        Box(Modifier.fillMaxWidth()) {
                                             AsyncImage(
                                                 model = filteredAndSortedSongs[0].pic,
                                                 contentDescription = null,
                                                 modifier = Modifier
-                                                    .size(240.dp)
-                                                    .clip(RoundedCornerShape(28.dp))
-                                                    .background(colorScheme.surfaceVariant),
+                                                    .fillMaxWidth()
+                                                    .height(190.dp)
+                                                    .hazeSource(hazeState),
                                                 contentScale = ContentScale.Crop,
                                                 error = painterResource(id = getRandomPlaceholderId())
                                             )
-                                        }
-                                    }
-
-                                    item {
-                                        Box(
-                                            Modifier.fillMaxWidth(),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            FilledTonalButton(
-                                                onClick = {
-                                                    vm.playSong(
-                                                        filteredAndSortedSongs[0],
-                                                        filteredAndSortedSongs
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(50.dp)
+                                                    .hazeEffect(
+                                                        hazeState,
+                                                        HazeStyle(
+                                                            blurRadius = 8.dp,
+                                                            tint = HazeTint(Color.Black.copy(alpha = 0.3f))
+                                                        )
                                                     )
-                                                },
-                                                modifier = Modifier.padding(bottom = 20.dp)
+                                                    .align(Alignment.BottomStart)
                                             ) {
-                                                Icon(Icons.Default.PlayArrow, null)
-                                                Spacer(Modifier.width(8.dp))
-                                                Text("播放全部")
+                                                Text(
+                                                    playlist.name,
+                                                    fontSize = 18.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier
+                                                        .align(Alignment.CenterStart)
+                                                        .padding(start = 16.dp)
+                                                        .fillMaxWidth(0.66f)
+                                                )
+                                                IconButton(
+                                                    onClick = {
+                                                        val firstSong = filteredAndSortedSongs[0]
+                                                        if (firstSong.source == SongSource.NETEASE) {
+                                                            vm.playNeteaseSong(firstSong, filteredAndSortedSongs)
+                                                        } else {
+                                                            vm.playSong(firstSong, filteredAndSortedSongs)
+                                                        }
+                                                    },
+                                                    modifier = Modifier
+                                                        .align(Alignment.BottomEnd)
+                                                        .padding(end = 16.dp, bottom = 8.dp)
+                                                        .size(48.dp),
+                                                    colors = IconButtonDefaults.iconButtonColors(
+                                                        containerColor = colorScheme.primary,
+                                                        contentColor = Color.White
+                                                    )
+                                                ) {
+                                                    Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(24.dp))
+                                                }
                                             }
                                         }
                                     }
+                                    item { Spacer(Modifier.height(16.dp)) }
                                 }
 
                                 itemsIndexed(filteredAndSortedSongs) { index, song ->
@@ -1821,7 +1930,11 @@ fun MyMusicScreenV2(
                                                                     lastSelectedIndex = null
                                                                 }
                                                             } else {
-                                                                vm.playSong(song, filteredAndSortedSongs)
+                                                                if (song.source == SongSource.NETEASE) {
+                                                                    vm.playNeteaseSong(song, filteredAndSortedSongs)
+                                                                } else {
+                                                                    vm.playSong(song, filteredAndSortedSongs)
+                                                                }
                                                             }
                                                         },
                                                         onLongPress = {
@@ -2022,10 +2135,11 @@ fun MyMusicScreenV2(
                                                 // 播放按钮
                                                 IconButton(
                                                     onClick = {
-                                                        vm.playSong(
-                                                            song,
-                                                            filteredAndSortedSongs
-                                                        )
+                                                        if (song.source == SongSource.NETEASE) {
+                                                            vm.playNeteaseSong(song, filteredAndSortedSongs)
+                                                        } else {
+                                                            vm.playSong(song, filteredAndSortedSongs)
+                                                        }
                                                     },
                                                     modifier = Modifier.size(40.dp)
                                                 ) {
@@ -2403,10 +2517,11 @@ fun MyMusicScreenV2(
                                                             lastRecentSelectedIndex = null
                                                         }
                                                     } else {
-                                                        vm.playSong(
-                                                            song,
-                                                            activeRecentPlaylist ?: emptyList()
-                                                        )
+                                                        if (song.source == SongSource.NETEASE) {
+                                                            vm.playNeteaseSong(song, activeRecentPlaylist ?: emptyList())
+                                                        } else {
+                                                            vm.playSong(song, activeRecentPlaylist ?: emptyList())
+                                                        }
                                                     }
                                                 },
                                                 onLongClick = {
@@ -2486,10 +2601,11 @@ fun MyMusicScreenV2(
                                         if (!isRecentSelectionMode) {
                                             IconButton(
                                                 onClick = {
-                                                    vm.playSong(
-                                                        song,
-                                                        activeRecentPlaylist ?: emptyList()
-                                                    )
+                                                    if (song.source == SongSource.NETEASE) {
+                                                        vm.playNeteaseSong(song, activeRecentPlaylist ?: emptyList())
+                                                    } else {
+                                                        vm.playSong(song, activeRecentPlaylist ?: emptyList())
+                                                    }
                                                 },
                                                 modifier = Modifier.size(40.dp)
                                             ) {
@@ -2640,6 +2756,7 @@ fun MyMusicScreenV2(
                 var searchQuery by remember { mutableStateOf("") }
 
                 val allSettingsItems = listOf(
+                    SettingsItem("账号管理", Icons.Default.ManageAccounts, "管理网易云和B站账号", "account"),
                     SettingsItem("下载位置设置", Icons.Default.Folder, "设置下载文件保存路径", "folder"),
                     SettingsItem("音质设置", Icons.Default.MusicNote, "下载和播放音质选项", "quality"),
                     SettingsItem("本地音乐歌词来源", Icons.Default.LibraryMusic, if (selectedLyricSource == 0) "内嵌" else "网络", "lyric"),
@@ -2740,6 +2857,81 @@ fun MyMusicScreenV2(
                                 .verticalScroll(rememberScrollState())
                         ) {
                             filteredItems.forEach { item ->
+                                if (item.id == "account") {
+                                    // 可展开的账号管理分组
+                                    ListItem(
+                                        headlineContent = { Text(item.title) },
+                                        supportingContent = { Text(item.subtitle, color = colorScheme.onSurfaceVariant) },
+                                        leadingContent = {
+                                            Icon(item.icon, null, tint = colorScheme.onSurfaceVariant)
+                                        },
+                                        trailingContent = {
+                                            Icon(
+                                                if (showAccountExpand) Icons.Default.ExpandMore else Icons.Default.ChevronRight,
+                                                null,
+                                                tint = colorScheme.onSurfaceVariant
+                                            )
+                                        },
+                                        modifier = Modifier.clickable { showAccountExpand = !showAccountExpand }
+                                    )
+                                    HorizontalDivider(color = colorScheme.surfaceVariant.copy(alpha = 0.3f))
+
+                                    AnimatedVisibility(visible = showAccountExpand) {
+                                        Column {
+                                            // 网易云账号
+                                            ListItem(
+                                                headlineContent = { Text("网易云账号") },
+                                                supportingContent = {
+                                                    Text(
+                                                        if (NeteaseApiService.isLoggedIn) "已登录" else "未登录",
+                                                        color = colorScheme.onSurfaceVariant
+                                                    )
+                                                },
+                                                leadingContent = {
+                                                    Icon(
+                                                        painter = painterResource(R.drawable.ic_netease_cloud_music),
+                                                        contentDescription = "网易云",
+                                                        tint = Color.Black,
+                                                        modifier = Modifier.size(24.dp)
+                                                    )
+                                                },
+                                                modifier = Modifier.clickable {
+                                                    if (NeteaseApiService.isLoggedIn) showNeteaseLogoutDialog = true
+                                                    else (context as MainActivity).startNeteaseLogin()
+                                                }
+                                            )
+                                            HorizontalDivider(color = colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                            // B站账号
+                                            ListItem(
+                                                headlineContent = { Text("B站账号") },
+                                                supportingContent = {
+                                                    Text(
+                                                        when (vm.biliLoginState.value) {
+                                                            MusicViewModel.BiliLoginState.LoggedIn -> "已登录"
+                                                            MusicViewModel.BiliLoginState.NotLoggedIn -> "未登录"
+                                                            MusicViewModel.BiliLoginState.Expired -> "登录已过期"
+                                                            MusicViewModel.BiliLoginState.Unknown -> "检查中..."
+                                                        },
+                                                        color = colorScheme.onSurfaceVariant
+                                                    )
+                                                },
+                                                leadingContent = {
+                                                    Icon(
+                                                        painter = painterResource(R.drawable.ic_bilibili),
+                                                        contentDescription = "B站",
+                                                        tint = Color.Unspecified,
+                                                        modifier = Modifier.size(24.dp)
+                                                    )
+                                                },
+                                                modifier = Modifier.clickable {
+                                                    if (vm.biliLoginState.value == MusicViewModel.BiliLoginState.LoggedIn) showBiliLogoutDialog = true
+                                                    else (context as MainActivity).startBiliLogin()
+                                                }
+                                            )
+                                            HorizontalDivider(color = colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                        }
+                                    }
+                                } else {
                                 ListItem(
                                     headlineContent = { Text(item.title) },
                                     supportingContent = { Text(item.subtitle, color = colorScheme.onSurfaceVariant) },
@@ -2785,7 +2977,7 @@ fun MyMusicScreenV2(
                                             "quality" -> {
                                                 selectedDownloadQuality = DownloadSettingsStore.getDownloadQuality(context)
                                                 selectedPlayQuality = DownloadSettingsStore.getPlayQuality(context)
-                                                showAudioQualityDialog = true
+                                                showAudioQualityScreen = true
                                             }
                                             "lyric" -> showLyricSourceDialog = true
                                             "dark" -> {
@@ -2799,6 +2991,7 @@ fun MyMusicScreenV2(
                                     }
                                 )
                                 HorizontalDivider(color = colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                } // end else (non-account item)
                             }
 
                             // 底部留白，与我的音乐界面保持一致
@@ -2926,104 +3119,128 @@ fun MyMusicScreenV2(
                 )
             }
 
-            // 音质设置对话框
-            if (showAudioQualityDialog) {
-                val qualities = listOf(128, 192, 320, 2000)
-                AlertDialog(
-                    onDismissRequest = { showAudioQualityDialog = false },
-                    title = { Text("音质设置") },
-                    text = {
-                        Column {
-                            Text(
-                                "下载音质",
-                                style = MaterialTheme.typography.titleSmall,
-                                modifier = Modifier.padding(bottom = 8.dp)
+            // 全屏音质设置界面
+            AnimatedVisibility(
+                visible = showAudioQualityScreen,
+                enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+                exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = colorScheme.background
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        CenterAlignedTopAppBar(
+                            title = {
+                                Text("音质设置", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            },
+                            navigationIcon = {
+                                IconButton(onClick = {
+                                    showAudioQualityScreen = false
+                                }) {
+                                    Icon(Icons.Default.ArrowBack, null)
+                                }
+                            },
+                            actions = {
+                                TextButton(onClick = {
+                                    DownloadSettingsStore.setDownloadQuality(context, selectedDownloadQuality)
+                                    DownloadSettingsStore.setPlayQuality(context, selectedPlayQuality)
+                                    showAudioQualityScreen = false
+                                }) {
+                                    Text("完成", color = colorScheme.primary)
+                                }
+                            },
+                            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                                containerColor = colorScheme.background,
+                                titleContentColor = colorScheme.onBackground,
+                                navigationIconContentColor = colorScheme.primary
                             )
-                            qualities.forEach { quality ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().clickable {
-                                        selectedDownloadQuality = quality
+                        )
+
+                        HorizontalDivider(color = colorScheme.surfaceVariant.copy(alpha = 0.3f))
+
+                        val qualityOptions = DownloadSettingsStore.qualityOptions
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            // 下载音质分组
+                            ListItem(
+                                headlineContent = {
+                                    Text("下载音质", fontWeight = FontWeight.Bold, color = colorScheme.primary)
+                                },
+                                supportingContent = {
+                                    Text("需登录网易云账号", color = colorScheme.onSurfaceVariant)
+                                }
+                            )
+
+                            qualityOptions.forEach { quality ->
+                                ListItem(
+                                    headlineContent = {
+                                        Text(DownloadSettingsStore.netEaseQualityLabel(quality))
                                     },
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(
-                                        selected = selectedDownloadQuality == quality,
-                                        onClick = { selectedDownloadQuality = quality },
-                                        colors = RadioButtonDefaults.colors(
-                                            selectedColor = colorScheme.primary
+                                    leadingContent = {
+                                        RadioButton(
+                                            selected = selectedDownloadQuality == quality,
+                                            onClick = null,
+                                            colors = RadioButtonDefaults.colors(selectedColor = colorScheme.primary)
                                         )
-                                    )
+                                    },
+                                    modifier = Modifier.clickable { selectedDownloadQuality = quality }
+                                )
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                            // 播放音质分组
+                            ListItem(
+                                headlineContent = {
+                                    Text("播放音质", fontWeight = FontWeight.Bold, color = colorScheme.primary)
+                                }
+                            )
+
+                            qualityOptions.forEach { quality ->
+                                ListItem(
+                                    headlineContent = {
+                                        Text(DownloadSettingsStore.netEaseQualityLabel(quality))
+                                    },
+                                    leadingContent = {
+                                        RadioButton(
+                                            selected = selectedPlayQuality == quality,
+                                            onClick = null,
+                                            colors = RadioButtonDefaults.colors(selectedColor = colorScheme.primary)
+                                        )
+                                    },
+                                    modifier = Modifier.clickable { selectedPlayQuality = quality }
+                                )
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                            ListItem(
+                                headlineContent = {
                                     Text(
-                                        when (quality) {
-                                            128 -> "128kbps (标准)"
-                                            192 -> "192kbps (高清)"
-                                            320 -> "320kbps (超清)"
-                                            2000 -> "2000kbps (无损)"
-                                            else -> "$quality kbps"
-                                        },
-                                        modifier = Modifier.weight(1f)
+                                        "高音质需登录网易云账号，部分歌曲可能因版权或会员限制而降级",
+                                        fontSize = 13.sp,
+                                        color = colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                leadingContent = {
+                                    Icon(
+                                        Icons.Default.Info,
+                                        contentDescription = null,
+                                        tint = colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
-                            }
-                            Spacer(Modifier.height(16.dp))
-                            Text(
-                                "播放音质",
-                                style = MaterialTheme.typography.titleSmall,
-                                modifier = Modifier.padding(bottom = 8.dp)
                             )
-                            qualities.forEach { quality ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().clickable {
-                                        selectedPlayQuality = quality
-                                    },
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(
-                                        selected = selectedPlayQuality == quality,
-                                        onClick = { selectedPlayQuality = quality },
-                                        colors = RadioButtonDefaults.colors(
-                                            selectedColor = colorScheme.primary
-                                        )
-                                    )
-                                    Text(
-                                        when (quality) {
-                                            128 -> "128kbps (标准)"
-                                            192 -> "192kbps (高清)"
-                                            320 -> "320kbps (超清)"
-                                            2000 -> "2000kbps (无损)"
-                                            else -> "$quality kbps"
-                                        },
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.height(16.dp))
-                            Text(
-                                "提示：部分音质可能在部分歌曲上不生效",
-                                fontSize = 12.sp,
-                                color = Color.Gray
-                            )
+
+                            Spacer(Modifier.navigationBarsPadding().height(160.dp))
                         }
-                    },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            DownloadSettingsStore.setDownloadQuality(
-                                context,
-                                selectedDownloadQuality
-                            )
-                            DownloadSettingsStore.setPlayQuality(context, selectedPlayQuality)
-                            showAudioQualityDialog = false
-                        }) {
-                            Text("保存")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showAudioQualityDialog = false }) {
-                            Text("取消")
-                        }
-                    },
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
+                    }
+                }
             }
 
             // 本地音乐歌词来源设置对话框
@@ -3343,17 +3560,7 @@ fun MyMusicScreenV2(
                                             .padding(top = 4.dp)
                                     )
 
-                                    Text(
-                                        "感谢祈杰のMeting-API对此项目做出的贡献",
-                                        color = colorScheme.onSurfaceVariant,
-                                        fontSize = 12.sp,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 20.dp)
-                                            .padding(top = 4.dp)
-                                    )
-                                }
+                                    }
                             }
 
                             // 开发者列表
@@ -3601,16 +3808,60 @@ fun MyMusicScreenV2(
             )
         }
 
-        BackHandler(enabled = activePlaylist != null || activeRecentPlaylist != null || showAboutScreen || showSettingsDialog) {
+        BackHandler(enabled = activePlaylist != null || activeRecentPlaylist != null || showAboutScreen || showSettingsDialog || showAudioQualityScreen) {
             if (activePlaylist != null) {
                 activePlaylist = null
             } else if (activeRecentPlaylist != null) {
                 activeRecentPlaylist = null
+            } else if (showAudioQualityScreen) {
+                showAudioQualityScreen = false
             } else if (showAboutScreen) {
                 showAboutScreen = false
             } else if (showSettingsDialog) {
                 showSettingsDialog = false
             }
+        }
+
+        // 网易云退出登录确认
+        if (showNeteaseLogoutDialog) {
+            AlertDialog(
+                onDismissRequest = { showNeteaseLogoutDialog = false },
+                containerColor = colorScheme.surface,
+                title = { Text("网易云账号") },
+                text = { Text("确定要退出网易云登录吗？") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        NeteaseApiService.logout()
+                        showNeteaseLogoutDialog = false
+                        Toast.makeText(context, "已退出网易云登录", Toast.LENGTH_SHORT).show()
+                    }) { Text("退出", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showNeteaseLogoutDialog = false }) { Text("取消") }
+                }
+            )
+        }
+
+        // B站退出登录确认
+        if (showBiliLogoutDialog) {
+            AlertDialog(
+                onDismissRequest = { showBiliLogoutDialog = false },
+                containerColor = colorScheme.surface,
+                title = { Text("B站账号") },
+                text = { Text("确定要退出B站登录吗？") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val biliApi = com.qian.jianyin.bili.BiliApi.getInstance(context)
+                        biliApi.clearCookies()
+                        vm.biliLoginState.value = MusicViewModel.BiliLoginState.NotLoggedIn
+                        showBiliLogoutDialog = false
+                        Toast.makeText(context, "已退出B站登录", Toast.LENGTH_SHORT).show()
+                    }) { Text("退出", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showBiliLogoutDialog = false }) { Text("取消") }
+                }
+            )
         }
 
         // 备份与恢复对话框

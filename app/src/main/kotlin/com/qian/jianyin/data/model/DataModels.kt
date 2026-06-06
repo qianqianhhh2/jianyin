@@ -1,5 +1,6 @@
 package com.qian.jianyin
 
+import com.qian.jianyin.netease.NeteaseSongSearchResult
 import retrofit2.http.GET
 import retrofit2.http.Query
 import retrofit2.http.Url
@@ -42,16 +43,53 @@ data class Song(
         fun detectSource(song: Song): SongSource {
             return when {
                 song.isLocal -> SongSource.LOCAL
-                song.isBiliVideo || song.bvid.isNotBlank() -> SongSource.BILI
+                song.isBiliVideo || song.bvid.isNotBlank() || song.id.startsWith("BV") -> SongSource.BILI
                 song.id.isNotBlank() && song.url.isNotBlank() -> SongSource.NETEASE
                 else -> SongSource.NETEASE
             }
         }
+
+        /** 反序列化后用此方法修正 source/isBiliVideo/bvid 字段 */
+        fun normalize(song: Song): Song = song.copy(
+            source = detectSource(song),
+            isBiliVideo = song.isBiliVideo || song.bvid.isNotBlank() || song.id.startsWith("BV"),
+            bvid = song.bvid.ifBlank {
+                if (song.id.startsWith("BV")) song.id else ""
+            }
+        )
     }
 }
 
 /**
- * 歌词行数据类
+ * 逐字歌词时间片
+ * @property startTimeMs 起始毫秒
+ * @property endTimeMs 结束毫秒
+ * @property charCount 字符数
+ */
+data class WordTiming(
+    val startTimeMs: Long,
+    val endTimeMs: Long,
+    val charCount: Int = 0
+)
+
+/**
+ * 歌词行数据类（支持逐字）
+ * words == null → 逐行模式（传统 LRC）
+ * words != null → 逐字模式（YRC）
+ * @property startTimeMs 行起始时间（毫秒）
+ * @property endTimeMs 行结束时间（毫秒）
+ * @property text 歌词文本
+ * @property words 逐字时间片列表
+ */
+data class LyricEntry(
+    val startTimeMs: Long,
+    val endTimeMs: Long,
+    val text: String,
+    val words: List<WordTiming>? = null
+)
+
+/**
+ * 歌词行数据类（旧版兼容）
  * 用于存储单句歌词及其时间戳
  * @property time 时间戳（毫秒）
  * @property text 歌词文本
@@ -69,6 +107,18 @@ data class PlaybackState(
     val songs: List<Song>,
     val currentIndex: Int,
     val timestamp: Long = System.currentTimeMillis()
+)
+
+/**
+ * 将 NeteaseSongSearchResult 映射为 Song（URL 为空，播放时动态获取）
+ */
+fun NeteaseSongSearchResult.toSong(): Song = Song(
+    id = id,
+    name = name,
+    artist = artist,
+    url = "",
+    pic = picUrl,
+    source = SongSource.NETEASE
 )
 
 /**

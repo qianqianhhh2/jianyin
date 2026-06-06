@@ -1,4 +1,4 @@
-package moe.ouom.biliapi
+package com.qian.jianyin.bili
 
 import android.content.Context
 import android.content.SharedPreferences

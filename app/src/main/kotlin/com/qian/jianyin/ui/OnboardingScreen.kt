@@ -40,6 +40,15 @@ import androidx.compose.ui.platform.LocalContext
 import kotlin.math.max
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import nl.dionsegijn.konfetti.compose.KonfettiView
+import nl.dionsegijn.konfetti.core.Angle
+import nl.dionsegijn.konfetti.core.Party
+import nl.dionsegijn.konfetti.core.Position
+import nl.dionsegijn.konfetti.core.Spread
+import nl.dionsegijn.konfetti.core.emitter.Emitter
+import nl.dionsegijn.konfetti.core.models.Shape
+import java.util.concurrent.TimeUnit
+import androidx.compose.ui.graphics.toArgb
 
 /**
  * 引导页管理器
@@ -89,7 +98,7 @@ fun OnboardingScreen(onComplete: () -> Unit) {
     
     var currentPage by remember { mutableStateOf(0) }
     var isExiting by remember { mutableStateOf(false) }
-    val totalPages = 5
+    val totalPages = 6
     
     val scale by animateFloatAsState(
         targetValue = if (isExiting) 0.8f else 1f,
@@ -131,7 +140,8 @@ fun OnboardingScreen(onComplete: () -> Unit) {
                     1 -> PermissionsPage()
                     2 -> DownloadPage()
                     3 -> BackupPage()
-                    4 -> CompletePage()
+                    4 -> LoginPage()
+                    5 -> CompletePage()
                 }
             }
         }
@@ -278,7 +288,7 @@ fun WelcomePage() {
         
         // 感谢信息
         Text(
-            text = "软件内歌曲免费，感谢祈杰のMeting-API以及Meting-API开源项目",
+            text = "软件不提供任免费歌曲服务，只提供播放功能",
             style = MaterialTheme.typography.bodyMedium.copy(
                 color = MaterialTheme.colorScheme.onBackground
             ),
@@ -610,12 +620,12 @@ fun BackupPage() {
 }
 
 /**
- * 完成页面
+ * 登录账号页面
  * 
- * 显示引导完成的提示信息，引导用户开始使用应用。
+ * 显示账号登录相关信息，引导用户在设置中登录账号。
  */
 @Composable
-fun CompletePage() {
+fun LoginPage() {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -624,7 +634,7 @@ fun CompletePage() {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "完成",
+            text = "登录账号",
             style = MaterialTheme.typography.headlineMedium.copy(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
@@ -633,9 +643,9 @@ fun CompletePage() {
         
         Spacer(modifier = Modifier.height(32.dp))
         
-        // 完成说明
+        // 登录说明
         Text(
-            text = "设置完成，让我们开始吧",
+            text = "你可以在设置里登录账号，以获取个性化功能以及平台的部分资源",
             style = MaterialTheme.typography.bodyMedium.copy(
                 color = MaterialTheme.colorScheme.onBackground
             ),
@@ -644,6 +654,149 @@ fun CompletePage() {
         )
         
         Spacer(modifier = Modifier.height(48.dp))
+        
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.AccountCircle,
+                        contentDescription = "登录",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "登录优势",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    )
+                }
+                Text(
+                    text = "• 同步个人收藏和播放列表\n• 获取平台会员专属资源\n• 个性化推荐内容",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier.padding(start = 28.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 完成页面
+ * 
+ * 显示引导完成的提示信息，引导用户开始使用应用。
+ */
+@Composable
+fun CompletePage() {
+    val colorScheme = MaterialTheme.colorScheme
+    val primaryColor = colorScheme.primary
+    
+    // 纸屑颜色列表（基于主色调调和）
+    val confettiColors = remember(primaryColor) {
+        listOf(
+            androidx.compose.ui.graphics.Color(0xfffce18a),
+            androidx.compose.ui.graphics.Color(0xFF009688),
+            androidx.compose.ui.graphics.Color(0xfff4306d),
+            androidx.compose.ui.graphics.Color(0xffb48def),
+            androidx.compose.ui.graphics.Color(0xFF95FF82),
+            androidx.compose.ui.graphics.Color(0xFF82ECFF),
+            androidx.compose.ui.graphics.Color(0xFFFF9800),
+            androidx.compose.ui.graphics.Color(0xFF0E008A)
+        ).map { it.toArgb() }
+    }
+    
+    // Default 粒子效果（参考 ImageToolbox）
+    val parties = remember(confettiColors) {
+        listOf(
+            Party(
+                speed = 0f,
+                maxSpeed = 15f,
+                damping = 0.9f,
+                angle = Angle.BOTTOM,
+                spread = Spread.ROUND,
+                colors = confettiColors,
+                shapes = listOf(Shape.Square, Shape.Circle, Shape.Rectangle(0.2f)),
+                emitter = Emitter(duration = 2, TimeUnit.SECONDS).perSecond(100),
+                position = Position.Relative(0.0, 0.0).between(Position.Relative(1.0, 0.0))
+            ),
+            Party(
+                speed = 10f,
+                maxSpeed = 30f,
+                damping = 0.9f,
+                angle = Angle.RIGHT - 45,
+                spread = 60,
+                colors = confettiColors,
+                shapes = listOf(Shape.Square, Shape.Circle, Shape.Rectangle(0.2f)),
+                emitter = Emitter(duration = 2, TimeUnit.SECONDS).perSecond(100),
+                position = Position.Relative(0.0, 1.0)
+            ),
+            Party(
+                speed = 10f,
+                maxSpeed = 30f,
+                damping = 0.9f,
+                angle = Angle.RIGHT - 135,
+                spread = 60,
+                colors = confettiColors,
+                shapes = listOf(Shape.Square, Shape.Circle, Shape.Rectangle(0.2f)),
+                emitter = Emitter(duration = 2, TimeUnit.SECONDS).perSecond(100),
+                position = Position.Relative(1.0, 1.0)
+            )
+        )
+    }
+    
+    Box(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // 纸屑效果
+        KonfettiView(
+            modifier = Modifier.fillMaxSize(),
+            parties = parties
+        )
+        
+        // 内容
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "完成",
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            )
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            
+            // 完成说明
+            Text(
+                text = "设置完成，让我们开始吧",
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    color = MaterialTheme.colorScheme.onBackground
+                ),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+            
+            Spacer(modifier = Modifier.height(48.dp))
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 package com.qian.jianyin.playback
 
 import android.annotation.SuppressLint
-import com.qian.jianyin.LrcLine
+import com.qian.jianyin.LyricEntry
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -40,7 +40,7 @@ class DesktopLyricService : Service() {
         private const val TAG = "DesktopLyricService"
         
         // 当前歌词数据
-        private var currentLyrics = mutableListOf<LrcLine>()
+        private var currentLyrics = mutableListOf<LyricEntry>()
         private var currentLineIndex = 0
         private var isPlaying = false
         
@@ -53,7 +53,7 @@ class DesktopLyricService : Service() {
         /**
          * 更新歌词数据
          */
-        fun updateLyric(lyrics: List<LrcLine>, lineIndex: Int, playing: Boolean = true) {
+        fun updateLyric(lyrics: List<LyricEntry>, lineIndex: Int, playing: Boolean = true) {
             Log.d(TAG, "updateLyric: lyrics size=${lyrics.size}, lineIndex=$lineIndex, playing=$playing")
             currentLyrics.clear()
             currentLyrics.addAll(lyrics)

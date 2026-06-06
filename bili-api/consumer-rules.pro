@@ -1,2 +1,2 @@
 # Consumer rules for bili-api
--keep class moe.ouom.biliapi.** { *; }
+-keep class com.qian.jianyin.bili.** { *; }

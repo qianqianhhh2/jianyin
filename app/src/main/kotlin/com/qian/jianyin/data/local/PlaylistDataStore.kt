@@ -99,7 +99,7 @@ object PlaylistDataStore {
     fun getAll(context: Context): List<UserSyncedPlaylist> {
         val prefsPlaylists = getPlaylistsFromPrefs(context)
         val localPlaylists = getLocalPlaylists(context)
-        return prefsPlaylists + localPlaylists
+        return (prefsPlaylists + localPlaylists).map { it.copy(songs = it.songs.map { s -> Song.normalize(s) }) }
     }
 
     private fun getPlaylistsFromPrefs(context: Context): List<UserSyncedPlaylist> {

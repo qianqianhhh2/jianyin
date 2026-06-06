@@ -1,4 +1,4 @@
-package moe.ouom.biliapi
+package com.qian.jianyin.bili
 
 import android.app.Activity
 import android.content.Context

@@ -4,7 +4,7 @@
 
 <img src="images/logo.png" width="200" height="200" alt="简音 Logo">
 
-**一个基于 Meting API 的现代化音乐播放器**
+**一个现代化的多平台音乐播放器**
 
 [![Android API](https://img.shields.io/badge/API-21%2B-brightgreen.svg?style=flat-square)](https://android-arsenal.com/api?level=21)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.0-blue.svg?style=flat-square)](https://kotlinlang.org)
@@ -20,7 +20,9 @@
 
 ## 项目简介
 
-简音是一款使用 Kotlin 和 Jetpack Compose 开发的现代化 Android 音乐播放器，基于 Meting API 提供音乐服务。采用 MVVM 架构，结合 Material Design 3 设计规范，为用户提供流畅、美观的音乐体验。
+简音是一款使用 Kotlin 和 Jetpack Compose 开发的现代化 Android 音乐播放器。采用 MVVM 架构，结合 Material Design 3 设计规范，为用户提供流畅、美观的音乐体验。
+
+> **重要声明**：出于项目存活考虑，本项目已不再依赖 Meting API，现已独立实现网易云和 Bilibili 的音乐接口。
 
 ## 核心特性
 
@@ -82,6 +84,7 @@ jianyin/
 │   │   │   ├── data/                       # 数据层
 │   │   │   │   ├── local/                  # 本地存储
 │   │   │   │   │   ├── DownloadSettingsStore.kt
+│   │   │   │   │   ├── PlaybackStateStore.kt
 │   │   │   │   │   ├── PlaylistDataStore.kt
 │   │   │   │   │   └── SongCustomDataStore.kt
 │   │   │   │   └── model/                  # 数据模型
@@ -97,6 +100,8 @@ jianyin/
 │   │   │   │   ├── BackupManager.kt
 │   │   │   │   └── MusicStatsManager.kt
 │   │   │   ├── playback/                   # 播放模块
+│   │   │   │   ├── BluetoothDisconnectReceiver.kt
+│   │   │   │   ├── DesktopLyricService.kt  # 桌面歌词服务
 │   │   │   │   ├── MediaSessionManager.kt
 │   │   │   │   ├── MusicPlayerManager.kt
 │   │   │   │   ├── PlaybackMode.kt
@@ -108,11 +113,12 @@ jianyin/
 │   │   │   ├── ui/                         # UI 层
 │   │   │   │   ├── BiliWebLoginActivity.kt
 │   │   │   │   ├── HomeScreen.kt
+│   │   │   │   ├── LyricReveal.kt          # 歌词显示组件
 │   │   │   │   ├── MainActivity.kt
 │   │   │   │   ├── MiniPlayer.kt
 │   │   │   │   ├── MyLibraryScreen.kt
 │   │   │   │   ├── MyMusicScreenV2.kt
-│   │   │   │   ├── OnboardingScreen.kt
+│   │   │   │   ├── OnboardingScreen.kt     # 引导页（含纸屑效果）
 │   │   │   │   └── SearchScreen.kt
 │   │   │   ├── utils/                      # 工具类
 │   │   │   │   ├── HitokotoManager.kt
@@ -129,12 +135,26 @@ jianyin/
 │   │   └── AndroidManifest.xml             # 应用清单文件
 │   └── build.gradle
 ├── bili-api/                               # Bilibili API 模块
-│   └── src/main/java/moe/ouom/biliapi/
+│   └── src/main/java/com/qian/jianyin/bili/
 │       ├── BiliApiHelper.kt                # Bili API 助手
 │       ├── BiliWebLoginHelper.kt           # B站网页登录助手
 │       ├── data/auth/BiliCookieRepository.kt
 │       ├── data/platform/BiliAudioSelector.kt
 │       └── util/BiliLogger.kt
+├── netease-api/                            # 网易云 API 模块
+│   └── src/main/java/com/qian/jianyin/netease/
+│       ├── api/
+│       │   ├── NeteaseApiService.kt        # 网易云 API 服务
+│       │   └── NeteaseClient.kt            # API 客户端
+│       ├── auth/
+│       │   ├── NeteaseAuthHeuristics.kt    # 认证启发式
+│       │   └── WebLoginCompletionWatcher.kt
+│       ├── data/auth/NeteaseCookieRepository.kt
+│       ├── CryptoMode.kt                   # 加密模式
+│       ├── JsonUtil.kt                     # JSON 工具
+│       ├── NeteaseCrypto.kt                # 网易云加密
+│       ├── NeteaseModels.kt                # 数据模型
+│       └── NeteaseWebLoginActivity.kt      # 网易云网页登录
 ├── gradle/                                 # Gradle 配置
 ├── images/                                 # 图片资源
 └── ...
@@ -284,6 +304,7 @@ chore: 构建/工具相关
 ### UI 效果
 
 - [Haze](https://github.com/chrisbanes/haze) - 毛玻璃模糊效果
+- [Konfetti](https://github.com/DionSegijn/Konfetti) - 纸屑动画效果
 
 ### 权限处理
 
@@ -303,7 +324,8 @@ chore: 构建/工具相关
 
 ### API 服务
 
-- [Meting API](https://github.com/metowolf/Meting) - 音乐接口服务
+- **网易云音乐 API** - 参照 NeriPlayer 实现
+- **Bilibili API** - 参照 NeriPlayer 实现
 
 ### 构建工具
 
@@ -311,7 +333,7 @@ chore: 构建/工具相关
 
 ### 参考项目
 
-- [NeriPlayer](https://github.com/cwuom/NeriPlayer) - 多平台音视频聚合流媒体播放器
+- [NeriPlayer](https://github.com/cwuom/NeriPlayer) - 多平台音视频聚合流媒体播放器，本项目 API 实现参考了该项目
 
 ## 联系方式
 

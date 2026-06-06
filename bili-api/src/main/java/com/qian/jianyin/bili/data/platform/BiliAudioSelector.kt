@@ -1,4 +1,4 @@
-package moe.ouom.biliapi.data.platform
+package com.qian.jianyin.data.platform
 
 import java.net.URI
 
