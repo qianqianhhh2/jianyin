@@ -35,6 +35,8 @@ import com.qian.jianyin.netease.NeteaseSongSearchResult
 import com.qian.jianyin.netease.api.NeteaseApiService
 import com.qian.jianyin.playback.DesktopLyricService
 import com.qian.jianyin.playback.BluetoothDisconnectReceiver
+import com.qian.jianyin.ui.ThemeColorUtil
+import com.qian.jianyin.DownloadSettingsStore
 
 // 歌单队列项数据类
 data class PlaylistQueueItem(
@@ -801,7 +803,18 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         currentLineIndex.intValue = 0
         currentPosition.longValue = 0L
         totalDuration.longValue = 0L
-        
+
+        // 专辑封面取色（仅当主题源为"专辑封面"时生效）
+        if (song.pic.isNotBlank() && DownloadSettingsStore.themeSourceFlow.value == 2) {
+            viewModelScope.launch {
+                val color = ThemeColorUtil.extractFromUrl(getApplication(), song.pic)
+                if (color != null) {
+                    DownloadSettingsStore.setCoverColor(color)
+                    DownloadSettingsStore.setSeedColor(getApplication(), color)
+                }
+            }
+        }
+
         // 记录来源列表和索引
         if (sourceList != null) {
             currentPlayingList.clear()

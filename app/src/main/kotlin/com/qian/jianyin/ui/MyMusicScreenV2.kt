@@ -11,7 +11,6 @@ import android.provider.DocumentsContract
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -31,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,12 +64,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.abs
 import com.qian.jianyin.bili.BiliWebLoginHelper
 import com.qian.jianyin.bili.BiliApi
 import com.qian.jianyin.netease.api.NeteaseApiService
 import com.qian.jianyin.R
 import com.qian.jianyin.MainActivity
 import com.qian.jianyin.BuildConfig
+import com.qian.jianyin.ui.ThemeColorUtil
 import android.app.Activity
 
 
@@ -201,6 +203,11 @@ fun MyMusicScreenV2(
             DownloadSettingsStore.getDarkMode(context)
         )
     } // 0: 跟随系统, 1: 浅色, 2: 深色
+
+    // 主题色设置相关状态
+    var showThemeDialog by remember { mutableStateOf(false) }
+    var selectedThemeSource by remember { mutableStateOf(DownloadSettingsStore.getThemeSource(context)) }
+    var selectedSeedColor by remember { mutableStateOf(DownloadSettingsStore.getSeedColor(context)) }
 
     // 启动设置相关状态
     var showStartupSettingsDialog by remember { mutableStateOf(false) }
@@ -497,9 +504,7 @@ fun MyMusicScreenV2(
                                         .size(120.dp)
                                         .clip(RoundedCornerShape(16.dp))
                                         .background(
-                                            if (isSystemInDarkTheme()) Color(0xFF2D3748) else Color(
-                                                0xFFE3EAF6
-                                            )
+                                            MaterialTheme.colorScheme.surfaceVariant
                                         )
                                         .hazeSource(itemHazeState),
                                     contentScale = ContentScale.Crop,
@@ -2770,6 +2775,13 @@ fun MyMusicScreenV2(
                         2 -> "深色"
                         else -> "跟随系统"
                     }, "dark"),
+                    SettingsItem("主题色", Icons.Default.Palette, when (selectedThemeSource) {
+                        0 -> "内置配色"
+                        1 -> "壁纸取色"
+                        2 -> "专辑封面"
+                        3 -> "用户自定义"
+                        else -> "内置配色"
+                    }, "theme"),
                     SettingsItem("备份与恢复", Icons.Default.Backup, "数据备份与恢复", "backup"),
                     SettingsItem("关于", Icons.Default.Info, "应用信息", "about")
                 )
@@ -2891,7 +2903,7 @@ fun MyMusicScreenV2(
                                                     Icon(
                                                         painter = painterResource(R.drawable.ic_netease_cloud_music),
                                                         contentDescription = "网易云",
-                                                        tint = Color.Black,
+                                                        tint = MaterialTheme.colorScheme.onSurface,
                                                         modifier = Modifier.size(24.dp)
                                                     )
                                                 },
@@ -2983,6 +2995,11 @@ fun MyMusicScreenV2(
                                             "dark" -> {
                                                 selectedDarkMode = DownloadSettingsStore.getDarkMode(context)
                                                 showDarkModeDialog = true
+                                            }
+                                            "theme" -> {
+                                                selectedThemeSource = DownloadSettingsStore.getThemeSource(context)
+                                                selectedSeedColor = DownloadSettingsStore.getSeedColor(context)
+                                                showThemeDialog = true
                                             }
                                             "startup" -> showStartupSettingsDialog = true
                                             "backup" -> showBackupDialog = true
@@ -3290,7 +3307,7 @@ fun MyMusicScreenV2(
                             Text(
                                 "提示：请保证歌曲名字和歌手正确，以获得最佳歌词匹配效果",
                                 fontSize = 12.sp,
-                                color = Color.Gray
+                                color = colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
                             )
                         }
                     },
@@ -3347,6 +3364,251 @@ fun MyMusicScreenV2(
                     },
                     dismissButton = {
                         TextButton(onClick = { showDarkModeDialog = false }) {
+                            Text("取消")
+                        }
+                    },
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            }
+
+            // 主题色设置对话框
+            if (showThemeDialog) {
+                var isExtracting by remember { mutableStateOf(false) }
+                val scope = rememberCoroutineScope()
+
+                // 切换到壁纸取色时自动提取
+                LaunchedEffect(selectedThemeSource) {
+                    if (selectedThemeSource == 1 && selectedSeedColor == 0L) {
+                        isExtracting = true
+                        scope.launch {
+                            val result = ThemeColorUtil.extractFromWallpaper(context)
+                            if (result != null) {
+                                selectedSeedColor = result
+                            } else {
+                                Toast.makeText(context, "无法读取系统壁纸", Toast.LENGTH_SHORT).show()
+                            }
+                            isExtracting = false
+                        }
+                    }
+                }
+
+                AlertDialog(
+                    onDismissRequest = { showThemeDialog = false },
+                    title = { Text("主题色") },
+                    text = {
+                        Column {
+                            val options = listOf(
+                                0 to "内置配色",
+                                1 to "壁纸取色",
+                                2 to "专辑封面",
+                                3 to "自定义"
+                            )
+                            options.forEach { (mode, label) ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().clickable {
+                                        selectedThemeSource = mode
+                                    },
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = selectedThemeSource == mode,
+                                        onClick = { selectedThemeSource = mode },
+                                        colors = RadioButtonDefaults.colors(
+                                            selectedColor = colorScheme.primary
+                                        )
+                                    )
+                                    Text(label, modifier = Modifier.weight(1f))
+                                }
+                            }
+
+                            // 专辑封面说明
+                            if (selectedThemeSource == 2) {
+                                Spacer(Modifier.height(16.dp))
+                                Text(
+                                    "自动从专辑封面提取颜色",
+                                    fontSize = 13.sp,
+                                    color = colorScheme.onSurfaceVariant,
+                                    lineHeight = 18.sp
+                                )
+                            }
+
+                            // 种子色预览色块（壁纸取色）
+                            if (selectedThemeSource == 1 && selectedSeedColor != 0L) {
+                                Spacer(Modifier.height(16.dp))
+                                Text("取色预览", fontSize = 13.sp, color = colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.height(8.dp))
+                                val seedColor = ThemeColorUtil.seedLongToColor(selectedSeedColor)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    ColorSwatch(seedColor, "主色")
+                                    ColorSwatch(
+                                        seedColor.let { c ->
+                                            val hsv = FloatArray(3)
+                                            android.graphics.Color.colorToHSV(c.toArgb(), hsv)
+                                            Color(android.graphics.Color.HSVToColor(floatArrayOf((hsv[0] + 30f) % 360f, 0.35f, 0.75f)))
+                                        },
+                                        "辅色"
+                                    )
+                                }
+                                Spacer(Modifier.height(12.dp))
+                                Button(
+                                    onClick = {
+                                        isExtracting = true
+                                        scope.launch {
+                                            val result = ThemeColorUtil.extractFromWallpaper(context)
+                                            if (result != null) {
+                                                selectedSeedColor = result
+                                            } else {
+                                                Toast.makeText(context, "无法读取系统壁纸", Toast.LENGTH_SHORT).show()
+                                            }
+                                            isExtracting = false
+                                        }
+                                    },
+                                    enabled = !isExtracting,
+                                    colors = ButtonDefaults.buttonColors(containerColor = seedColor)
+                                ) {
+                                    if (isExtracting) {
+                                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                                        Spacer(Modifier.width(8.dp))
+                                    }
+                                    Text("重新取色")
+                                }
+                            } else if (selectedThemeSource == 1 && isExtracting) {
+                                Spacer(Modifier.height(24.dp))
+                                CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+                                Text("正在从系统壁纸取色...", fontSize = 13.sp, color = colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp))
+                            }
+
+                            // 用户自定义颜色选择器
+                            if (selectedThemeSource == 3) {
+                                Spacer(Modifier.height(12.dp))
+                                val currentColor = ThemeColorUtil.seedLongToColor(
+                                    if (selectedSeedColor != 0L) selectedSeedColor
+                                    else colorScheme.primary.toArgb().toLong() and 0xFFFFFFFFL
+                                )
+                                val currentHsv = remember(currentColor) {
+                                    FloatArray(3).also { android.graphics.Color.colorToHSV(currentColor.toArgb(), it) }
+                                }
+                                var hue by remember(currentHsv[0]) { mutableFloatStateOf(currentHsv[0]) }
+                                var saturation by remember(currentHsv[1]) { mutableFloatStateOf(currentHsv[1]) }
+                                var brightness by remember(currentHsv[2]) { mutableFloatStateOf(currentHsv[2]) }
+
+                                val previewColor = remember(hue, saturation, brightness) {
+                                    Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, brightness)))
+                                }
+                                selectedSeedColor = previewColor.toArgb().toLong() and 0xFFFFFFFFL
+
+                                // 颜色预览
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Box(Modifier.size(48.dp).background(previewColor, RoundedCornerShape(12.dp)).border(2.dp, colorScheme.outline, RoundedCornerShape(12.dp)))
+                                    Column {
+                                        Text("选择颜色", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = colorScheme.onSurface)
+                                        Text(
+                                            "#%02X%02X%02X".format(
+                                                (previewColor.toArgb() shr 16) and 0xFF,
+                                                (previewColor.toArgb() shr 8) and 0xFF,
+                                                previewColor.toArgb() and 0xFF
+                                            ),
+                                            fontSize = 12.sp,
+                                            color = colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                Spacer(Modifier.height(12.dp))
+
+                                // 预设色块
+                                Text("快速选择", fontSize = 12.sp, color = colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.height(8.dp))
+                                val presets = listOf(
+                                    0xFFFF5252.toInt(), 0xFFFF7043.toInt(), 0xFFFFA726.toInt(), 0xFF66BB6A.toInt(),
+                                    0xFF26C6DA.toInt(), 0xFF42A5F5.toInt(), 0xFF5C6BC0.toInt(), 0xFFAB47BC.toInt(),
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    presets.forEach { colorInt ->
+                                        val col = Color(colorInt)
+                                        val presetHsv = FloatArray(3)
+                                        android.graphics.Color.colorToHSV(colorInt, presetHsv)
+                                        Box(
+                                            Modifier.size(32.dp).background(col, CircleShape).border(2.dp,
+                                                if (abs(hue - presetHsv[0]) < 2f) colorScheme.primary else Color.Transparent,
+                                                CircleShape
+                                            )
+                                                .clickable {
+                                                    hue = presetHsv[0]
+                                                    saturation = 1f
+                                                    brightness = 1f
+                                                }
+                                        )
+                                    }
+                                }
+
+                                Spacer(Modifier.height(12.dp))
+
+                                // 色调滑块
+                                Text("色调", fontSize = 12.sp, color = colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.height(4.dp))
+                                Slider(
+                                    value = hue,
+                                    onValueChange = { hue = it },
+                                    valueRange = 0f..360f,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 1f, 1f))),
+                                        activeTrackColor = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 1f, 1f)))
+                                    )
+                                )
+
+                                // 饱和度滑块
+                                Text("饱和度", fontSize = 12.sp, color = colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.height(4.dp))
+                                Slider(
+                                    value = saturation,
+                                    onValueChange = { saturation = it },
+                                    valueRange = 0f..1f,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = previewColor,
+                                        activeTrackColor = previewColor
+                                    )
+                                )
+
+                                // 亮度滑块
+                                Text("亮度", fontSize = 12.sp, color = colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.height(4.dp))
+                                Slider(
+                                    value = brightness,
+                                    onValueChange = { brightness = it },
+                                    valueRange = 0.1f..1f,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = previewColor,
+                                        activeTrackColor = previewColor
+                                    )
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            when (selectedThemeSource) {
+                                2 -> DownloadSettingsStore.setThemeSource(context, 2)
+                                3, 1 -> {
+                                    DownloadSettingsStore.setThemeSource(context, selectedThemeSource)
+                                    DownloadSettingsStore.setSeedColor(context, selectedSeedColor)
+                                }
+                                else -> {
+                                    DownloadSettingsStore.setThemeSource(context, 0)
+                                    DownloadSettingsStore.setSeedColor(context, 0L)
+                                }
+                            }
+                            showThemeDialog = false
+                        }) {
+                            Text("保存")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showThemeDialog = false }) {
                             Text("取消")
                         }
                     },
@@ -3686,7 +3948,7 @@ fun MyMusicScreenV2(
                                     },
                                     shape = RoundedCornerShape(16.dp),
                                     modifier = Modifier.fillMaxWidth(),
-                                    color = Color(0x15FFA726)
+                                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.08f)
                                 ) {
                                     Row(
                                         modifier = Modifier
@@ -3698,13 +3960,13 @@ fun MyMusicScreenV2(
                                             modifier = Modifier
                                                 .size(50.dp)
                                                 .clip(RoundedCornerShape(12.dp))
-                                                .background(Color(0x30FFA726)),
+                                                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.19f)),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 Icons.Default.Coffee,
                                                 contentDescription = null,
-                                                tint = Color(0xFFFFA726),
+                                                tint = MaterialTheme.colorScheme.tertiary,
                                                 modifier = Modifier.size(28.dp)
                                             )
                                         }
@@ -3716,7 +3978,7 @@ fun MyMusicScreenV2(
                                         ) {
                                             Text(
                                                 "赞助一杯咖啡",
-                                                color = Color(0xFFFFA726),
+                                                color = MaterialTheme.colorScheme.tertiary,
                                                 fontSize = 16.sp,
                                                 fontWeight = FontWeight.Medium
                                             )
@@ -3733,13 +3995,13 @@ fun MyMusicScreenV2(
                                             modifier = Modifier
                                                 .size(36.dp)
                                                 .clip(CircleShape)
-                                                .background(Color(0x30FF4081)),
+                                                .background(MaterialTheme.colorScheme.error.copy(alpha = 0.19f)),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 Icons.Default.Favorite,
                                                 contentDescription = null,
-                                                tint = Color(0xFFFF4081),
+                                                tint = MaterialTheme.colorScheme.error,
                                                 modifier = Modifier.size(20.dp)
                                             )
                                         }
@@ -4074,5 +4336,19 @@ fun DeveloperCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ColorSwatch(color: Color, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(color)
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
+        )
+        Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

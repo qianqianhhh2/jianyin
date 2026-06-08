@@ -77,7 +77,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
@@ -103,6 +102,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.BackEventCompat
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -114,6 +115,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import android.graphics.Color as AndroidColor
 import android.widget.Toast
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import android.content.Intent
@@ -128,9 +131,9 @@ import com.qian.jianyin.VersionChecker
 import com.qian.jianyin.VersionUpdate
 import com.qian.jianyin.VersionUpdateDialog
 import com.qian.jianyin.DownloadSettingsStore
+import com.qian.jianyin.ui.JianYinTheme
 import com.qian.jianyin.playback.DesktopLyricService
 import com.qian.jianyin.playback.DesktopLyricSettings
-import androidx.compose.runtime.collectAsState
 import com.qian.jianyin.bili.BiliWebLoginHelper
 import androidx.media3.common.util.UnstableApi
 import dev.chrisbanes.haze.ExperimentalHazeApi
@@ -402,6 +405,8 @@ class MainActivity : ComponentActivity() {
             val context = LocalContext.current
             DownloadSettingsStore.initDarkMode(context)
             DownloadSettingsStore.initFadeEnabled(context)
+            DownloadSettingsStore.initThemeSource(context)
+            DownloadSettingsStore.initSeedColor(context)
             val onboardingManager = remember { OnboardingManager(context) }
             val isFirstLaunch = remember { mutableStateOf(onboardingManager.isFirstLaunch()) }
             
@@ -409,29 +414,7 @@ class MainActivity : ComponentActivity() {
             val showVersionUpdateDialog = remember { mutableStateOf(false) }
             val versionUpdate = remember { mutableStateOf<VersionUpdate?>(null) }
             
-            val darkModeSetting by DownloadSettingsStore.darkModeFlow.collectAsState()
-            val darkTheme = when (darkModeSetting) {
-                0 -> isSystemInDarkTheme()
-                1 -> false
-                2 -> true
-                else -> isSystemInDarkTheme()
-            }
-            val colorScheme = if (darkTheme) darkColorScheme(
-                primary = Color(0xFFA7C2F7),
-                primaryContainer = Color(0xFF004187),
-                secondary = Color(0xFFBAC4D8),
-                secondaryContainer = Color(0xFF3B4758),
-                background = Color(0xFF121212),
-                surface = Color(0xFF1E1E1E)
-            ) else lightColorScheme(
-                primary = Color(0xFF0B57D0),
-                primaryContainer = Color(0xFFD3E3FD),
-                secondary = Color(0xFF535F73),
-                secondaryContainer = Color(0xFFD6E0F0),
-                background = Color(0xFFF0F4F9),
-                surface = Color(0xFFF0F4F9)
-            )
-            MaterialTheme(colorScheme = colorScheme) {
+            JianYinTheme {
                 if (isFirstLaunch.value) {
                     OnboardingScreen(onComplete = {
                         onboardingManager.markAsCompleted()
@@ -493,7 +476,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     
-                    MainScreenFramework(vm, darkTheme)
+                    MainScreenFramework(vm)
                     
                     // 版本更新弹窗
                     VersionUpdateDialog(
@@ -915,30 +898,14 @@ fun RadioButtonRow(text: String, selected: Boolean, onSelect: () -> Unit) {
  */
 @OptIn(androidx.compose.animation.ExperimentalAnimationApi::class)
 @Composable
-fun MainScreenFramework(vm: MusicViewModel = viewModel(), isDarkMode: Boolean = false) {
+fun MainScreenFramework(vm: MusicViewModel = viewModel()) {
     var selectedItem by remember { mutableIntStateOf(0) }
     var refreshPlaylistTrigger by remember { mutableIntStateOf(0) }
-    var lastBackPressTime by remember { mutableLongStateOf(0L) }
-    val context = LocalContext.current
     
-    // 添加返回键处理
+    // 返回键：仅播放器面板打开时拦截，关闭面板。
+    // 不做根 Activity 级别的拦截，否则系统会禁用返回主屏幕的预返回动画预览。
     BackHandler(vm.isPlayerSheetVisible.value) {
         vm.isPlayerSheetVisible.value = false
-    }
-    
-    // 全局返回键退出应用（两次确认）
-    BackHandler(enabled = !vm.isPlayerSheetVisible.value) {
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastBackPressTime < 1000) {
-            val intent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_HOME)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(intent)
-        } else {
-            lastBackPressTime = currentTime
-            Toast.makeText(context, "再按一次退出应用", Toast.LENGTH_SHORT).show()
-        }
     }
     
     val navItems = listOf(
@@ -1036,8 +1003,8 @@ fun MainScreenFramework(vm: MusicViewModel = viewModel(), isDarkMode: Boolean = 
             ) {
                 when (it) {
                     // 关键：把 innerPadding 传给子页面
-                    0 -> HomeScreen(vm, innerPadding, isDarkMode)
-                    1 -> SearchScreen(vm, innerPadding, isDarkMode)
+                    0 -> HomeScreen(vm, innerPadding)
+                    1 -> SearchScreen(vm, innerPadding)
                     2 -> MyMusicScreenV2(vm, innerPadding, refreshPlaylistTrigger)
                 }
             }
@@ -1145,15 +1112,20 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
-    // 处理返回键，优先关闭弹出的菜单
-    BackHandler(showMoreMenu || showQueue || showPlaybackSpeedDialog) {
-        if (showMoreMenu) {
-            showMoreMenu = false
-        } else if (showPlaybackSpeedDialog) {
-            showPlaybackSpeedDialog = false
-        } else if (showQueue) {
-            showQueue = false
-        }
+    // 更多菜单和播放队列：PredictiveBackHandler，手势滑动时展示动画预览
+    PredictiveBackHandler(enabled = showMoreMenu || showQueue) { progress: Flow<BackEventCompat> ->
+        try {
+            progress.collect { /* system preview */ }
+            if (showMoreMenu) {
+                showMoreMenu = false
+            } else if (showQueue) {
+                showQueue = false
+            }
+        } catch (_: CancellationException) { }
+    }
+    // 倍速弹窗：普通 BackHandler，不需要动画预览
+    BackHandler(showPlaybackSpeedDialog) {
+        showPlaybackSpeedDialog = false
     }
 
     // 只隐藏传统的三大金刚键，不隐藏小白条
@@ -1311,7 +1283,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                         Icon(
                             imageVector = if (vm.isPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, 
                             contentDescription = null, 
-                            tint = if (isSystemInDarkTheme()) Color.White else MaterialTheme.colorScheme.onPrimary, 
+                            tint = MaterialTheme.colorScheme.onPrimary, 
                             modifier = Modifier.size(40.dp)
                         )
                     }
@@ -1359,7 +1331,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                             },
                             contentDescription = if (vm.isCurrentSongFavorited.value) "取消收藏" else "收藏",
                             tint = if (vm.isCurrentSongFavorited.value) {
-                                Color(0xFFFF4444)  // 固定使用危险红，与浅色模式一致
+                                MaterialTheme.colorScheme.error  // 使用主题错误色
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant  // 未收藏时使用变体颜色
                             }
@@ -2455,10 +2427,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                                 .size(48.dp)
                                                 .clip(RoundedCornerShape(8.dp))
                                                 .background(
-                                                    if (isSystemInDarkTheme())
-                                                        Color(0xFF4A5568)
-                                                    else
-                                                        Color(0xFFFFFEFE)
+                                                    MaterialTheme.colorScheme.surfaceVariant
                                                 )
                                                 .then(if (isSelectionMode) Modifier.clickable { selectedSongs = if (selectedSongs.contains(songKey)) selectedSongs - songKey else selectedSongs + songKey } else Modifier),
                                             contentScale = ContentScale.Crop,
@@ -2620,7 +2589,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                 color = if (currentSpeed.value == speed) {
                                     MaterialTheme.colorScheme.primary
                                 } else {
-                                    if (isSystemInDarkTheme()) Color(0xFF2D3748) else Color(0xFFE3EAF6)
+                                    MaterialTheme.colorScheme.surfaceVariant
                                 },
                                 modifier = Modifier.padding(vertical = 4.dp)
                             ) {

@@ -8,7 +8,6 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -239,7 +238,6 @@ fun OnboardingScreen(onComplete: () -> Unit) {
  */
 @Composable
 fun WelcomePage() {
-    val isDarkTheme = isSystemInDarkTheme()
 
     Column(
         modifier = Modifier

@@ -1,7 +1,6 @@
 package com.qian.jianyin
 
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -41,8 +40,7 @@ private fun getRandomPlaceholderId(): Int {
 @Composable
 fun SearchScreen(
     vm: MusicViewModel,
-    innerPadding: PaddingValues,
-    isDarkMode: Boolean = isSystemInDarkTheme()
+    innerPadding: PaddingValues
 ) {
     val context = LocalContext.current
     var searchText by remember { mutableStateOf("") }
@@ -95,8 +93,8 @@ fun SearchScreen(
                     }
                 },
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = if (isDarkMode) Color(0xFF2D3748) else Color(0xFFE3EAF6),
-                    unfocusedContainerColor = if (isDarkMode) Color(0xFF2D3748).copy(alpha = 0.8f) else Color(0xFFE3EAF6).copy(alpha = 0.8f),
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
                     focusedBorderColor = colorScheme.primary,
                     unfocusedBorderColor = colorScheme.outline,
                     focusedTextColor = colorScheme.onSurface,
@@ -151,7 +149,7 @@ fun SearchScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 vm.searchHistory.forEach { history ->
-                                    SuggestionTagV2(history, colorScheme, isDarkMode) {
+                                    SuggestionTagV2(history, colorScheme) {
                                         searchText = it
                                         vm.executeSearch(it)
                                     }
@@ -175,7 +173,7 @@ fun SearchScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             vm.recommendedSearches.forEach { tag ->
-                                SuggestionTagV2(tag, colorScheme, isDarkMode) {
+                                SuggestionTagV2(tag, colorScheme) {
                                     searchText = it
                                     vm.executeSearch(it)
                                 }
@@ -306,7 +304,7 @@ fun SearchScreen(
                                             modifier = Modifier
                                                 .size(if (isSelectionMode) 48.dp else 56.dp)
                                                 .clip(RoundedCornerShape(12.dp))
-                                                .background(if (isDarkMode) Color(0xFF2D3748) else Color(0xFFE3EAF6)),
+                                                .background(MaterialTheme.colorScheme.surfaceVariant),
                                             contentScale = ContentScale.Crop,
                                             error = painterResource(id = getRandomPlaceholderId())
                                         )
@@ -465,11 +463,11 @@ fun SearchScreen(
 }
 
 @Composable
-fun SuggestionTagV2(text: String, cs: ColorScheme, isDarkMode: Boolean, onClick: (String) -> Unit) {
+fun SuggestionTagV2(text: String, cs: ColorScheme, onClick: (String) -> Unit) {
     Surface(
         onClick = { onClick(text) },
         shape = RoundedCornerShape(16.dp),
-        color = if (isDarkMode) Color(0xFF2D3748) else Color(0xFFE3EAF6),
+        color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.padding(vertical = 4.dp)
     ) {
         Text(
@@ -482,7 +480,7 @@ fun SuggestionTagV2(text: String, cs: ColorScheme, isDarkMode: Boolean, onClick:
 }
 
 @Composable
-fun SongItemViewV2(song: Song, cs: ColorScheme, isDarkMode: Boolean, onClick: () -> Unit) {
+fun SongItemViewV2(song: Song, cs: ColorScheme, onClick: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -497,7 +495,7 @@ fun SongItemViewV2(song: Song, cs: ColorScheme, isDarkMode: Boolean, onClick: ()
                 modifier = Modifier
                     .size(56.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(if (isDarkMode) Color(0xFF2D3748) else Color(0xFFE3EAF6)),
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentScale = ContentScale.Crop,
                 error = painterResource(id = getRandomPlaceholderId())
             )

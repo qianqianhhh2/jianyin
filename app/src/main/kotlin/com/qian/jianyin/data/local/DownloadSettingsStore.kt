@@ -25,6 +25,8 @@ object DownloadSettingsStore {
     private const val KEY_DEFAULT_MUSIC_OPENER = "default_music_opener"
     private const val KEY_KEEP_PLAYLIST_ON_EXIT = "keep_playlist_on_exit"    // 离开后保留列表
     private const val KEY_AUTO_PLAY_ON_START = "auto_play_on_start"            // 启动时播放
+    private const val KEY_THEME_SOURCE = "theme_source"                         // 0: 内置配色, 1: 取色
+    private const val KEY_SEED_COLOR = "seed_color"                             // 种子色 ARGB hex
     // 旧版key用于迁移
     private const val KEY_CUSTOM_PATH_OLD = "custom_download_path"
 
@@ -60,6 +62,16 @@ object DownloadSettingsStore {
 
     private val _fadeEnabledFlow = MutableStateFlow(false)
     val fadeEnabledFlow: StateFlow<Boolean> = _fadeEnabledFlow.asStateFlow()
+
+    private val _themeSourceFlow = MutableStateFlow(0) // 0: 内置, 1: 取色
+    val themeSourceFlow: StateFlow<Int> = _themeSourceFlow.asStateFlow()
+
+    private val _seedColorFlow = MutableStateFlow(0L) // ARGB long
+    val seedColorFlow: StateFlow<Long> = _seedColorFlow.asStateFlow()
+
+    // 专辑封面取色（实时，不持久化）
+    private val _coverColorFlow = MutableStateFlow(0L)
+    val coverColorFlow: StateFlow<Long> = _coverColorFlow.asStateFlow()
 
     fun initDarkMode(context: Context) {
         _darkModeFlow.value = getDarkMode(context)
@@ -257,5 +269,41 @@ object DownloadSettingsStore {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_AUTO_PLAY_ON_START, enabled)
             .apply()
+    }
+
+    fun getThemeSource(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_THEME_SOURCE, 0)
+    }
+
+    fun setThemeSource(context: Context, source: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_THEME_SOURCE, source)
+            .apply()
+        _themeSourceFlow.value = source
+    }
+
+    fun initThemeSource(context: Context) {
+        _themeSourceFlow.value = getThemeSource(context)
+    }
+
+    fun getSeedColor(context: Context): Long {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getLong(KEY_SEED_COLOR, 0L)
+    }
+
+    fun setSeedColor(context: Context, argb: Long) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putLong(KEY_SEED_COLOR, argb)
+            .apply()
+        _seedColorFlow.value = argb
+    }
+
+    fun initSeedColor(context: Context) {
+        _seedColorFlow.value = getSeedColor(context)
+    }
+
+    fun setCoverColor(argb: Long) {
+        _coverColorFlow.value = argb
     }
 }

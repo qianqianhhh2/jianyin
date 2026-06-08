@@ -103,8 +103,7 @@ fun SectionLoading(modifier: Modifier = Modifier) {
 @Composable
 fun HomeScreen(
     vm: MusicViewModel,
-    innerPadding: PaddingValues,
-    isDarkMode: Boolean = isSystemInDarkTheme()
+    innerPadding: PaddingValues
 ) {
     val context = LocalContext.current
     val homeVm: HomeScreenViewModel = viewModel()
@@ -702,12 +701,12 @@ private fun PlaylistDetailPage(
         songs
     }
 
-    BackHandler { 
+    BackHandler {
         if (showSearchBox) {
             showSearchBox = false
             searchQuery = ""
         } else {
-            onBack() 
+            onBack()
         }
     }
 
@@ -929,7 +928,7 @@ private fun PlaylistDetailPage(
                         if (index < songs.size - 1) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 20.dp),
-                                color = Color.Gray.copy(alpha = 0.15f)
+                                color = colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
                         }
                     }

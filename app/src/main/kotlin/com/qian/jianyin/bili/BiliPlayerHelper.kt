@@ -11,10 +11,12 @@ import com.qian.jianyin.bili.BiliApi
 @UnstableApi
 object BiliPlayerHelper {
     private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    private const val REFERER = "https://www.bilibili.com"
 
     fun createPlayer(context: Context, biliApi: BiliApi): ExoPlayer {
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(USER_AGENT)
+            .setDefaultRequestProperties(mapOf("Referer" to REFERER))
 
         val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
         val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
