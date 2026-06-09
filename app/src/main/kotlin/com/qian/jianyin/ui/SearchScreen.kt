@@ -73,7 +73,7 @@ fun SearchScreen(
                     if (it.isNotEmpty()) {
                         vm.searchWithoutHistory(it)
                     } else {
-                        vm.searchResults.clear()
+                        vm.clearSearchResults()
                     }
                 },
                 modifier = Modifier

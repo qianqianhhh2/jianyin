@@ -30,6 +30,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Shape
+import com.qian.jianyin.ui.shapes.MaterialStarShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -47,6 +49,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlendMode
@@ -222,6 +225,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // 记录应用启动（用户统计）
+        UserStatsManager(this).recordAppOpen()
         
         // 初始化网易云 API
         com.qian.jianyin.netease.api.NeteaseApiService.init(this)
@@ -1261,7 +1267,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(bottom = 32.dp)) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(bottom = 16.dp)) {
                     Text(song.name, color = MaterialTheme.colorScheme.onSurface, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-                    Text(song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 16.sp)
+                    Text(song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 16.sp, textAlign = TextAlign.Center)
                 }
                 
                 Spacer(Modifier.height(16.dp))
@@ -1279,14 +1285,82 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                         Icon(Icons.Default.SkipPrevious, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(44.dp)) 
                     }
                     Spacer(Modifier.width(32.dp))
-                    FloatingActionButton(onClick = { vm.togglePlay() }, shape = CircleShape, containerColor = MaterialTheme.colorScheme.primary) {
-                        Icon(
-                            imageVector = if (vm.isPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, 
-                            contentDescription = null, 
-                            tint = MaterialTheme.colorScheme.onPrimary, 
-                            modifier = Modifier.size(40.dp)
+                    
+                    // 播放状态用星形，暂停用圆形，带平滑过渡动画
+                    // 加载状态在星形和圆形之间不停切换
+                    val isPlaying by remember { vm.isPlaying }
+                    val isLoading by remember { vm.isLoading }
+                    
+                    // 加载状态时交替切换形状
+                    val infiniteTransition = rememberInfiniteTransition()
+                    val isStarDuringLoading by infiniteTransition.animateFloat(
+                        initialValue = 0f,
+                        targetValue = 1f,
+                        animationSpec = infiniteRepeatable(
+                            tween(durationMillis = 500)
                         )
+                    )
+                    
+                    val displayAsStar = if (isLoading) {
+                        isStarDuringLoading > 0.5f
+                    } else {
+                        isPlaying
                     }
+                    
+                    // 旋转动画：从星形变圆形时旋转360度
+                    val rotation by animateFloatAsState(
+                        targetValue = if (displayAsStar) 0f else 360f,
+                        animationSpec = spring(
+                            stiffness = Spring.StiffnessMedium,
+                            dampingRatio = Spring.DampingRatioMediumBouncy
+                        ),
+                        label = "ButtonRotation"
+                    )
+                    
+                    // 使用自定义按钮去掉水波纹效果
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .rotate(rotation)
+                            .clip(if (displayAsStar) MaterialStarShape else CircleShape)
+                            .background(MaterialTheme.colorScheme.primary)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { 
+                                if (!isLoading) {
+                                    vm.togglePlay() 
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AnimatedContent(
+                            targetState = isLoading to isPlaying,
+                            transitionSpec = {
+                                fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
+                                scaleIn(initialScale = 0.9f) with
+                                fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
+                                scaleOut(targetScale = 0.9f)
+                            }
+                        ) { (loading, playing) ->
+                            if (loading) {
+                                // 加载状态显示进度指示器
+                                CircularProgressIndicator(
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    strokeWidth = 3.dp,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                            }
+                        }
+                    }
+                    
                     Spacer(Modifier.width(32.dp))
                     IconButton(onClick = { vm.nextSong() }) { 
                         Icon(Icons.Default.SkipNext, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(44.dp)) 
@@ -1301,7 +1375,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 播放模式聚合按钮（顺序/随机/单曲循环）
+                    // 播放模式聚合按钮（顺序/随机/单曲循环/心动模式）
                     IconButton(
                         onClick = {
                             vm.togglePlayMode()
@@ -1309,11 +1383,22 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                         },
                         modifier = Modifier.size(32.dp)
                     ) {
-                        Icon(
-                            imageVector = vm.playMode.value.getIcon(), // 使用 PlaybackMode 的 getIcon 方法
-                            contentDescription = vm.playMode.value.label,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        val customIconRes = vm.playMode.value.getCustomIconRes()
+                        if (customIconRes != null) {
+                            // 心动模式使用自定义图标（红色）
+                            Icon(
+                                painter = painterResource(id = customIconRes),
+                                contentDescription = vm.playMode.value.label,
+                                modifier = Modifier.size(32.dp),
+                                tint = Color.Red
+                            )
+                        } else {
+                            Icon(
+                                imageVector = vm.playMode.value.getIcon(), // 使用 PlaybackMode 的 getIcon 方法
+                                contentDescription = vm.playMode.value.label,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                     
                     // 收藏按钮

@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -83,11 +84,15 @@ data class SettingsItem(
 )
 
 @Composable
-fun SectionHeaderV6(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: (() -> Unit)? = null) {
+fun SectionHeaderV6(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: (() -> Unit)? = null, actionIcon: androidx.compose.ui.graphics.vector.ImageVector? = null) {
     val cs = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(title, color = cs.onBackground, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        if (onClick != null) { IconButton(onClick = onClick) { Icon(icon, null, tint = cs.primary) } }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = cs.primary, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(title, color = cs.onBackground, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
+        if (onClick != null) { IconButton(onClick = onClick) { Icon(actionIcon ?: icon, null, tint = cs.primary) } }
     }
 }
 
@@ -323,110 +328,197 @@ fun MyMusicScreenV2(
         syncedPlaylists.addAll(PlaylistDataStore.getAll(context))
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        // 主内容
-        Box(modifier = Modifier.fillMaxSize().background(colorScheme.background)) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp)
-            ) {
-                // 添加64dp的顶部空间
-                Spacer(modifier = Modifier.height(64.dp))
-                // 顶部标题行
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 28.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "我的音乐",
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Black,
-                        color = colorScheme.onBackground
-                    )
-                    IconButton(
-                        onClick = { showSettingsDialog = true },
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = "设置"
-                        )
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
+        rememberTopAppBarState()
+    )
+    val lazyListState = rememberLazyListState()
+
+    val previewSongs by remember {
+        derivedStateOf {
+            vm.historyList.takeLast(10).reversed()
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(colorScheme.background)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .nestedScroll(scrollBehavior.nestedScrollConnection)
+        ) {
+            LargeTopAppBar(
+                title = { Text("我的音乐", fontWeight = FontWeight.Black) },
+                actions = {
+                    IconButton(onClick = { showSettingsDialog = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "设置")
                     }
-                }
+                },
+                scrollBehavior = scrollBehavior,
+                windowInsets = WindowInsets(0),
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent
+                ),
+                modifier = Modifier.padding(top = 8.dp)
+            )
 
-
+            LazyColumn(
+                state = lazyListState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 20.dp)
+            ) {
                 // 最近播放预览板块（显示10首）
                 if (vm.historyList.isNotEmpty()) {
-                    val previewSongs by remember {
-                        derivedStateOf {
-                            vm.historyList.takeLast(10).reversed()
-                        }
-                    }
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                    item {
+                        Column(
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(
-                                "最近播放",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = colorScheme.onBackground
-                            )
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.clickable {
-                                    // 点击查看更多后进入详情页，显示完整的50首
-                                    activeRecentPlaylist = vm.historyList.takeLast(50).reversed()
-                                }
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    "查看更多",
-                                    fontSize = 13.sp,
-                                    color = colorScheme.primary,
-                                    modifier = Modifier.padding(end = 4.dp)
-                                )
-                                Icon(
-                                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                    contentDescription = null,
-                                    tint = colorScheme.primary,
-                                    modifier = Modifier.size(16.dp)
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.PlayCircle,
+                                        contentDescription = null,
+                                        tint = colorScheme.primary,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        "最近播放",
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = colorScheme.onBackground
+                                    )
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.clickable {
+                                        activeRecentPlaylist = vm.historyList.takeLast(50).reversed()
+                                    }
+                                ) {
+                                    Text(
+                                        "查看更多",
+                                        fontSize = 13.sp,
+                                        color = colorScheme.primary,
+                                        modifier = Modifier.padding(end = 4.dp)
+                                    )
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                        contentDescription = null,
+                                        tint = colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
-                        }
-                        Spacer(Modifier.height(12.dp))
+                            Spacer(Modifier.height(12.dp))
 
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            items(previewSongs) { song ->
-                                val itemHazeState = remember { HazeState() }
-                                Box(
-                                    modifier = Modifier
-                                        .width(120.dp)
-                                        .clickable {
-                                            if (song.source == SongSource.NETEASE) {
-                                                vm.playNeteaseSong(song, previewSongs)
-                                            } else {
-                                                vm.playSong(song, previewSongs)
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                items(previewSongs) { song ->
+                                    val itemHazeState = remember { HazeState() }
+                                    Box(
+                                        modifier = Modifier
+                                            .width(120.dp)
+                                            .clickable {
+                                                if (song.source == SongSource.NETEASE) {
+                                                    vm.playNeteaseSong(song, previewSongs)
+                                                } else {
+                                                    vm.playSong(song, previewSongs)
+                                                }
+                                            }
+                                    ) {
+                                        AsyncImage(
+                                            model = song.pic,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(120.dp)
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .background(colorScheme.surfaceVariant)
+                                                .hazeSource(itemHazeState),
+                                            contentScale = ContentScale.Crop,
+                                            error = painterResource(id = getRandomPlaceholderId())
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .size(120.dp, 40.dp)
+                                                .clip(
+                                                    RoundedCornerShape(
+                                                        bottomStart = 16.dp,
+                                                        bottomEnd = 16.dp
+                                                    )
+                                                )
+                                                .hazeEffect(
+                                                    itemHazeState,
+                                                    HazeStyle(
+                                                        blurRadius = 10.dp,
+                                                        tint = HazeTint(Color.Black.copy(alpha = 0.2f))
+                                                    )
+                                                )
+                                                .align(Alignment.BottomStart)
+                                        ) {
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .padding(8.dp)
+                                                    .padding(bottom = 4.dp),
+                                                verticalArrangement = Arrangement.Center
+                                            ) {
+                                                Text(
+                                                    song.name,
+                                                    color = Color.White,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    softWrap = false
+                                                )
+                                                Text(
+                                                    song.artist,
+                                                    color = Color.White,
+                                                    fontSize = 9.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    softWrap = false
+                                                )
                                             }
                                         }
-                                ) {
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    item { Spacer(Modifier.height(24.dp)) }
+                }
+
+                // 最近最爱部分
+                if (favoriteSongs.isNotEmpty()) {
+                    item {
+                        SectionHeaderV6("最近最爱", Icons.Default.Star)
+                    }
+                    item {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            items(favoriteSongs) { song ->
+                                val itemHazeState = remember { HazeState() }
+                                Box(
+                                    modifier = Modifier.width(120.dp)
+                                        .clickable {
+                                            if (song.source == SongSource.NETEASE) {
+                                                vm.playNeteaseSong(song, favoriteSongs)
+                                            } else {
+                                                vm.playSong(song, favoriteSongs)
+                                            }
+                                        }) {
                                     AsyncImage(
                                         model = song.pic,
                                         contentDescription = null,
                                         modifier = Modifier
                                             .size(120.dp)
                                             .clip(RoundedCornerShape(16.dp))
-                                            .background(colorScheme.surfaceVariant)
+                                            .background(
+                                                MaterialTheme.colorScheme.surfaceVariant
+                                            )
                                             .hazeSource(itemHazeState),
                                         contentScale = ContentScale.Crop,
                                         error = painterResource(id = getRandomPlaceholderId())
@@ -479,101 +571,25 @@ fun MyMusicScreenV2(
                             }
                         }
                     }
-                    Spacer(Modifier.height(24.dp))
                 }
 
-                // 最近最爱部分
-                if (favoriteSongs.isNotEmpty()) {
-                    SectionHeaderV6("最近最爱", Icons.AutoMirrored.Filled.KeyboardArrowRight)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        items(favoriteSongs) { song ->
-                            val itemHazeState = remember { HazeState() }
-                            Box(
-                                modifier = Modifier.width(120.dp)
-                                    .clickable {
-                                        if (song.source == SongSource.NETEASE) {
-                                            vm.playNeteaseSong(song, favoriteSongs)
-                                        } else {
-                                            vm.playSong(song, favoriteSongs)
-                                        }
-                                    }) {
-                                AsyncImage(
-                                    model = song.pic,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(120.dp)
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .background(
-                                            MaterialTheme.colorScheme.surfaceVariant
-                                        )
-                                        .hazeSource(itemHazeState),
-                                    contentScale = ContentScale.Crop,
-                                    error = painterResource(id = getRandomPlaceholderId())
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .size(120.dp, 40.dp)
-                                        .clip(
-                                            RoundedCornerShape(
-                                                bottomStart = 16.dp,
-                                                bottomEnd = 16.dp
-                                            )
-                                        )
-                                        .hazeEffect(
-                                            itemHazeState,
-                                            HazeStyle(
-                                                blurRadius = 10.dp,
-                                                tint = HazeTint(Color.Black.copy(alpha = 0.2f))
-                                            )
-                                        )
-                                        .align(Alignment.BottomStart)
-                                ) {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(8.dp)
-                                            .padding(bottom = 4.dp),
-                                        verticalArrangement = Arrangement.Center
-                                    ) {
-                                        Text(
-                                            song.name,
-                                            color = Color.White,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            softWrap = false
-                                        )
-                                        Text(
-                                            song.artist,
-                                            color = Color.White,
-                                            fontSize = 9.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            softWrap = false
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(12.dp))
+                item { Spacer(Modifier.height(12.dp)) }
 
                 // 同步歌单标题栏：改为 Add 图标
-                SectionHeaderV6("我的歌单", Icons.Default.Add) {
-                    showAddDialog = true
+                item {
+                    SectionHeaderV6("我的歌单", Icons.Default.LibraryMusic, onClick = { showAddDialog = true }, actionIcon = Icons.Default.Add)
                 }
 
                 if (syncedPlaylists.isEmpty()) {
-                    Text(
-                        "暂无同步歌单，点击上方 + 号导入",
-                        color = colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 20.dp)
-                    )
+                    item {
+                        Text(
+                            "暂无同步歌单，点击上方 + 号导入",
+                            color = colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 20.dp)
+                        )
+                    }
                 } else {
-                    syncedPlaylists.forEach { playlist ->
+                    items(syncedPlaylists) { playlist ->
                         PlaylistItemV6(
                             playlist = playlist,
                             onClick = {
@@ -585,10 +601,11 @@ fun MyMusicScreenV2(
                         )
                     }
                 }
-                Spacer(Modifier.height(200.dp))
+                item { Spacer(Modifier.height(200.dp)) }
             }
+        }
 
-            // --- 弹窗逻辑 1：添加歌单 ---
+        // --- 弹窗逻辑 1：添加歌单 ---
             if (showAddDialog) {
                 var selectedSource by remember { mutableStateOf(0) } // 0: 网易云歌单, 1: 本地歌单, 2: B站歌单, 3: 创建新歌单
                 var isSyncingBili by remember { mutableStateOf(false) }
@@ -2903,7 +2920,7 @@ fun MyMusicScreenV2(
                                                     Icon(
                                                         painter = painterResource(R.drawable.ic_netease_cloud_music),
                                                         contentDescription = "网易云",
-                                                        tint = MaterialTheme.colorScheme.onSurface,
+                                                        tint = Color(0xFFDD001B),
                                                         modifier = Modifier.size(24.dp)
                                                     )
                                                 },
@@ -4244,7 +4261,6 @@ fun MyMusicScreenV2(
             )
         }
     }
-}
 
 @Composable
 fun DeveloperCard(

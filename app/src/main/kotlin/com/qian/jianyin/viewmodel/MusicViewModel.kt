@@ -73,6 +73,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val isSearching = mutableStateOf(false)
     val currentSong = mutableStateOf<Song?>(null)
     val isPlaying = mutableStateOf(false)
+    val isLoading = mutableStateOf(false)
     val isPlayerSheetVisible = mutableStateOf(false)
 
     // 进度与歌词
@@ -128,6 +129,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val gson = Gson()
     private var progressJob: Job? = null
     private var fadeJob: Job? = null
+    private var searchJob: Job? = null
     
     private var bluetoothDisconnectReceiver: BluetoothDisconnectReceiver? = null
 
@@ -200,6 +202,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     Log.d("MusicVM", "歌曲播放结束，自动下一首")
                     nextSong()
                 }
+                
+                // 更新加载状态
+                isLoading.value = state == Player.STATE_BUFFERING
             }
 
             override fun onPositionDiscontinuity(
@@ -453,8 +458,150 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     // 切换模式方法
     fun togglePlayMode() {
-        playMode.value = playMode.value.next()
+        val nextMode = playMode.value.next()
+        playMode.value = nextMode
         Log.d("MusicVM", "播放模式切换为: ${playMode.value}")
+        
+        // 如果切换到心动模式，自动初始化心动模式播放列表
+        if (nextMode == PlaybackMode.HEARTBEAT) {
+            initializeHeartbeatMode()
+        }
+    }
+    
+    /**
+     * 心动模式 - 从多个来源按比例随机获取歌曲
+     * 比例：今日推荐(30%) : 个性化推荐(50%) : 用户曲库(20%)
+     */
+    private fun initializeHeartbeatMode() {
+        Log.d("MusicVM", "初始化心动模式")
+        viewModelScope.launch {
+            try {
+                // 获取今日推荐歌曲（热歌榜作为今日推荐的代表）
+                val todayRecommendSongs = fetchTodayRecommendSongs()
+                Log.d("MusicVM", "今日推荐歌曲数: ${todayRecommendSongs.size}")
+                
+                // 获取个性化推荐歌单的歌曲
+                val personalizedSongs = fetchPersonalizedSongs()
+                Log.d("MusicVM", "个性化推荐歌曲数: ${personalizedSongs.size}")
+                
+                // 获取用户曲库中的歌曲
+                val librarySongs = fetchLibrarySongs()
+                Log.d("MusicVM", "用户曲库歌曲数: ${librarySongs.size}")
+                
+                // 按比例随机选取歌曲（3:5:2）
+                val totalCount = 50 // 总共选取50首歌曲
+                val recommendCount = (totalCount * 0.3).toInt() // 15首
+                val personalizedCount = (totalCount * 0.5).toInt() // 25首
+                val libraryCount = totalCount - recommendCount - personalizedCount // 10首
+                
+                // 随机选取
+                val selectedRecommend = todayRecommendSongs.shuffled().take(recommendCount)
+                val selectedPersonalized = personalizedSongs.shuffled().take(personalizedCount)
+                val selectedLibrary = librarySongs.shuffled().take(libraryCount)
+                
+                // 合并并打乱顺序
+                val heartbeatQueue = (selectedRecommend + selectedPersonalized + selectedLibrary).shuffled()
+                
+                Log.d("MusicVM", "心动模式队列构建完成，总歌曲数: ${heartbeatQueue.size}")
+                Log.d("MusicVM", "今日推荐选取: ${selectedRecommend.size}, 个性化推荐选取: ${selectedPersonalized.size}, 用户曲库选取: ${selectedLibrary.size}")
+                
+                // 更新播放队列
+                if (heartbeatQueue.isNotEmpty()) {
+                    playQueue.clear()
+                    playQueue.addAll(heartbeatQueue)
+                    currentQueueIndex.intValue = 0
+                    
+                    // 如果当前正在播放，继续播放新队列的第一首
+                    if (isPlaying.value) {
+                        val firstSong = heartbeatQueue[0]
+                        if (firstSong.source == SongSource.NETEASE) {
+                            val songWithUrl = fetchNeteaseSongUrl(firstSong)
+                            if (songWithUrl.url.isNotBlank()) {
+                                playQueue[0] = songWithUrl
+                                startPlaying(songWithUrl, playQueue)
+                            }
+                        } else {
+                            startPlaying(firstSong, playQueue)
+                        }
+                    }
+                    
+                    toastMessage.value = "心动模式已开启，共${heartbeatQueue.size}首歌曲"
+                } else {
+                    toastMessage.value = "暂无足够歌曲，无法开启心动模式"
+                    // 切换回顺序播放模式
+                    playMode.value = PlaybackMode.SEQUENCE
+                }
+            } catch (e: Exception) {
+                Log.e("MusicVM", "初始化心动模式失败", e)
+                toastMessage.value = "开启心动模式失败: ${e.message}"
+                // 切换回顺序播放模式
+                playMode.value = PlaybackMode.SEQUENCE
+            }
+        }
+    }
+    
+    /**
+     * 获取今日推荐歌曲（使用热歌榜作为今日推荐）
+     */
+    private suspend fun fetchTodayRecommendSongs(): List<Song> {
+        return try {
+            // 使用热歌榜作为今日推荐
+            PlaylistSyncManager.fetchPlaylist("3778678") ?: emptyList()
+        } catch (e: Exception) {
+            Log.e("MusicVM", "获取今日推荐失败", e)
+            emptyList()
+        }
+    }
+    
+    /**
+     * 获取个性化推荐歌单的歌曲
+     */
+    private suspend fun fetchPersonalizedSongs(): List<Song> {
+        val allSongs = mutableListOf<Song>()
+        try {
+            // 获取推荐歌单列表
+            val playlists = NeteaseApiService.getRecommendedPlaylists(5) // 获取5个推荐歌单
+            
+            for (playlist in playlists) {
+                try {
+                    val songs = PlaylistSyncManager.fetchPlaylist(playlist.id)
+                    if (songs != null && songs.isNotEmpty()) {
+                        allSongs.addAll(songs)
+                    }
+                } catch (e: Exception) {
+                    Log.e("MusicVM", "获取歌单 ${playlist.name} 失败", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("MusicVM", "获取个性化推荐失败", e)
+        }
+        return allSongs.distinctBy { it.id } // 去重
+    }
+    
+    /**
+     * 获取用户曲库中的歌曲
+     */
+    private suspend fun fetchLibrarySongs(): List<Song> {
+        val context = getApplication<Application>()
+        val songs = mutableListOf<Song>()
+        
+        try {
+            // 获取用户收藏的歌曲
+            val favoritesPlaylist = PlaylistDataStore.getFavoritesPlaylist(context)
+            songs.addAll(favoritesPlaylist.songs)
+            
+            // 获取用户所有歌单中的歌曲
+            val playlists = PlaylistDataStore.getAll(context)
+            for (playlist in playlists) {
+                if (!playlist.id.startsWith("bili_") && playlist.id != "jianyin_favorites_playlist") { // 排除B站歌单和收藏歌单（已单独处理）
+                    songs.addAll(playlist.songs)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("MusicVM", "获取用户曲库失败", e)
+        }
+        
+        return songs.distinctBy { it.id } // 去重
     }
     
     // 切换进度条样式
@@ -610,7 +757,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun searchWithoutHistory(query: String) {
         if (query.isBlank()) return
-        viewModelScope.launch {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
             isSearching.value = true
             try {
                 val results = NeteaseApiService.searchSongs(query)
@@ -631,6 +779,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 isSearching.value = false
             }
         }
+    }
+    
+    fun clearSearchResults() {
+        searchJob?.cancel()
+        searchResults.clear()
+        isSearching.value = false
     }
 
     private suspend fun fetchNeteaseSongUrl(song: Song): Song {
@@ -844,6 +998,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         val statsManager = MusicStatsManager(getApplication())
         val songKey = song.id.ifBlank { song.url }
         statsManager.recordPlay(songKey)
+
+        // 记录用户统计：今日播放数、常听时段
+        val userStats = UserStatsManager(getApplication())
+        userStats.recordPlayToday()
+        userStats.recordPlayHour()
 
         // 自动缓存逻辑：播放超过3次且未下载过则自动下载
         checkAutoCache(song)
@@ -1160,7 +1319,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 Log.d("MusicVM", "单曲循环模式，继续播放: ${playQueue[currentQueueIndex.intValue].name}")
                 playQueue[currentQueueIndex.intValue]
             }
-            PlaybackMode.RANDOM -> {
+            PlaybackMode.RANDOM, PlaybackMode.HEARTBEAT -> {
                 if (playQueue.size == 1) {
                     playQueue.first()
                 } else {
@@ -1170,7 +1329,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     } while (randomIndex == currentQueueIndex.intValue)
                     
                     currentQueueIndex.intValue = randomIndex
-                    Log.d("MusicVM", "随机播放模式，随机到: ${playQueue[randomIndex].name}")
+                    Log.d("MusicVM", "${if (playMode.value == PlaybackMode.HEARTBEAT) "心动" else "随机"}播放模式，随机到: ${playQueue[randomIndex].name}")
                     playQueue[randomIndex]
                 }
             }
@@ -1327,8 +1486,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 Log.d("MusicVM", "单曲循环模式，继续播放: ${playQueue[currentQueueIndex.intValue].name}")
                 playQueue[currentQueueIndex.intValue]
             }
-            PlaybackMode.RANDOM -> {
-                // 随机播放
+            PlaybackMode.RANDOM, PlaybackMode.HEARTBEAT -> {
+                // 随机播放 / 心动模式
                 if (playQueue.size == 1) {
                     playQueue.first()
                 } else {
@@ -1338,7 +1497,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     } while (randomIndex == currentQueueIndex.intValue) // 避免和当前歌曲相同
                     
                     currentQueueIndex.intValue = randomIndex
-                    Log.d("MusicVM", "随机播放模式，随机到: ${playQueue[randomIndex].name}")
+                    Log.d("MusicVM", "${if (playMode.value == PlaybackMode.HEARTBEAT) "心动" else "随机"}播放模式，随机到: ${playQueue[randomIndex].name}")
                     playQueue[randomIndex]
                 }
             }
