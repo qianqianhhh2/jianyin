@@ -108,7 +108,19 @@ fun SongItemV6(song: Song, cs: ColorScheme, onClick: () -> Unit) {
         AsyncImage(model = song.pic, contentDescription = null, modifier = Modifier.size(54.dp).clip(RoundedCornerShape(10.dp)).background(cs.surfaceVariant), contentScale = ContentScale.Crop, error = mikuPainter)
         Column(Modifier.padding(start = 16.dp).weight(1f)) {
             Text(song.name, color = cs.onBackground, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(song.artist, color = cs.onSurfaceVariant, fontSize = 13.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(song.artist, color = cs.onSurfaceVariant, fontSize = 13.sp)
+                // 分p视频标识
+                if (song.isPartOfMultiPage) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Badge(
+                        containerColor = cs.primaryContainer,
+                        contentColor = cs.onPrimaryContainer
+                    ) {
+                        Text("P${song.pageIndex}/${song.pageCount}", fontSize = 10.sp)
+                    }
+                }
+            }
         }
     }
 }
@@ -440,6 +452,16 @@ fun MyMusicScreenV2(
                                             contentScale = ContentScale.Crop,
                                             error = painterResource(id = getRandomPlaceholderId())
                                         )
+                                        // 分p标识 - 在封面右上角
+                                        if (song.isPartOfMultiPage) {
+                                            MultiPageTaijiBadge(
+                                                pageIndex = song.pageIndex,
+                                                pageCount = song.pageCount,
+                                                modifier = Modifier
+                                                    .align(Alignment.TopEnd)
+                                                    .padding(6.dp)
+                                            )
+                                        }
                                         Box(
                                             modifier = Modifier
                                                 .size(120.dp, 40.dp)
@@ -523,6 +545,16 @@ fun MyMusicScreenV2(
                                         contentScale = ContentScale.Crop,
                                         error = painterResource(id = getRandomPlaceholderId())
                                     )
+                                    // 分p标识 - 在封面右上角
+                                    if (song.isPartOfMultiPage) {
+                                        MultiPageTaijiBadge(
+                                            pageIndex = song.pageIndex,
+                                            pageCount = song.pageCount,
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(6.dp)
+                                        )
+                                    }
                                     Box(
                                         modifier = Modifier
                                             .size(120.dp, 40.dp)
@@ -989,21 +1021,9 @@ fun MyMusicScreenV2(
                                         // B站歌单：从B站API获取
                                         val folderId = target.id.removePrefix("bili_").toLongOrNull()
                                         if (folderId != null) {
-                                            val biliApi = BiliApi.getInstance(context)
-                                            val items = withContext(Dispatchers.IO) { biliApi.getFavFolderItems(folderId) }
-                                            val songs = items.map { item ->
-                                                Song(
-                                                    id = item.bvid,
-                                                    name = item.title,
-                                                    artist = item.owner,
-                                                    url = "",
-                                                    pic = item.pic,
-                                                    source = SongSource.BILI,
-                                                    isBiliVideo = true,
-                                                    bvid = item.bvid,
-                                                    cid = item.cid
-                                                )
-                                            }
+                                            val songs = withContext(Dispatchers.IO) { 
+                                                BiliPlaylistSyncManager.fetchPlaylistItems(context, folderId) 
+                                            } ?: emptyList()
                                             val updated = target.copy(songs = songs, coverPic = songs.firstOrNull()?.pic ?: target.coverPic)
                                             PlaylistDataStore.update(context, updated)
                                             val index = syncedPlaylists.indexOfFirst { it.id == target.id }
@@ -2037,12 +2057,24 @@ fun MyMusicScreenV2(
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
                                                 )
-                                                Text(
-                                                    song.artist,
-                                                    color = colorScheme.onSurfaceVariant,
-                                                    fontSize = 13.sp,
-                                                    maxLines = 1
-                                                )
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        song.artist,
+                                                        color = colorScheme.onSurfaceVariant,
+                                                        fontSize = 13.sp,
+                                                        maxLines = 1
+                                                    )
+                                                    // 分p视频标识
+                                                    if (song.isPartOfMultiPage) {
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Badge(
+                                                            containerColor = colorScheme.primaryContainer,
+                                                            contentColor = colorScheme.onPrimaryContainer
+                                                        ) {
+                                                            Text("P${song.pageIndex}/${song.pageCount}", fontSize = 10.sp)
+                                                        }
+                                                    }
+                                                }
                                             }
                                             
                                             // 选择模式下显示拖拽器（仅网络歌单和用户创建歌单）
@@ -2594,16 +2626,18 @@ fun MyMusicScreenV2(
                                             Spacer(modifier = Modifier.width(16.dp))
                                         }
 
-                                        AsyncImage(
-                                            model = song.pic,
-                                            contentDescription = null,
-                                            modifier = Modifier
-                                                .size(52.dp)
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .background(colorScheme.surfaceVariant),
-                                            contentScale = ContentScale.Crop,
-                                            error = painterResource(id = getRandomPlaceholderId())
-                                        )
+                                        Box(modifier = Modifier.size(52.dp)) {
+                                            AsyncImage(
+                                                model = song.pic,
+                                                contentDescription = null,
+                                                modifier = Modifier
+                                                    .size(52.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(colorScheme.surfaceVariant),
+                                                contentScale = ContentScale.Crop,
+                                                error = painterResource(id = getRandomPlaceholderId())
+                                            )
+                                        }
                                         Column(Modifier.padding(start = 16.dp).weight(1f)) {
                                             Text(
                                                 song.name,
@@ -2612,12 +2646,22 @@ fun MyMusicScreenV2(
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
-                                            Text(
-                                                song.artist,
-                                                color = colorScheme.onSurfaceVariant,
-                                                fontSize = 13.sp,
-                                                maxLines = 1
-                                            )
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    song.artist,
+                                                    color = colorScheme.onSurfaceVariant,
+                                                    fontSize = 13.sp,
+                                                    maxLines = 1
+                                                )
+                                                // 分p视频标识
+                                                if (song.isPartOfMultiPage) {
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    MultiPageTaijiBadge(
+                                                        pageIndex = song.pageIndex,
+                                                        pageCount = song.pageCount
+                                                    )
+                                                }
+                                            }
                                         }
                                         // 非选择模式下显示播放按钮
                                         if (!isRecentSelectionMode) {

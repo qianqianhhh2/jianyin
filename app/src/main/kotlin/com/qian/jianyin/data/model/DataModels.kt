@@ -37,7 +37,13 @@ data class Song(
     val isLocal: Boolean = false,
     val isBiliVideo: Boolean = false,
     val bvid: String = "",
-    val cid: Long = 0
+    val cid: Long = 0,
+    // 分p视频相关字段
+    val isPartOfMultiPage: Boolean = false,  // 是否为分p视频的一部分
+    val pageIndex: Int = 0,                  // 当前是第几p（从1开始）
+    val pageCount: Int = 0,                  // 总共有多少p
+    val pageName: String = "",               // 当前p的名称（小标题）
+    val parentBvid: String = ""              // 父视频的bvid（用于关联同一视频的所有分p）
 ) {
     companion object {
         fun detectSource(song: Song): SongSource {
@@ -55,7 +61,9 @@ data class Song(
             isBiliVideo = song.isBiliVideo || song.bvid.isNotBlank() || song.id.startsWith("BV"),
             bvid = song.bvid.ifBlank {
                 if (song.id.startsWith("BV")) song.id else ""
-            }
+            },
+            // 确保 parentBvid 如果为空则使用 bvid
+            parentBvid = song.parentBvid.ifBlank { song.bvid }
         )
     }
 }

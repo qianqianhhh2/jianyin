@@ -135,6 +135,11 @@ class BiliApi private constructor(
     suspend fun getVideoInfo(bvid: String): BiliClient.VideoBasicInfo = client.getVideoBasicInfoByBvid(bvid)
 
     suspend fun getVideoInfo(avid: Long): BiliClient.VideoBasicInfo = client.getVideoBasicInfoByAvid(avid)
+    
+    suspend fun getVideoPages(bvid: String): List<BiliClient.VideoPage> {
+        val videoInfo = client.getVideoBasicInfoByBvid(bvid)
+        return videoInfo.pages
+    }
 
     suspend fun searchVideos(keyword: String, page: Int = 1): BiliClient.SearchVideoPage = client.searchVideos(keyword, page)
 
@@ -246,7 +251,8 @@ class BiliClient(
         val title: String,
         val pic: String,
         val owner: String,
-        val stat: Stat
+        val stat: Stat,
+        val pages: List<VideoPage> = emptyList()
     ) {
         data class Stat(
             val view: Int,
@@ -255,6 +261,13 @@ class BiliClient(
             val favorite: Int
         )
     }
+    
+    data class VideoPage(
+        val cid: Long,
+        val page: Int,
+        val part: String,
+        val duration: Int
+    )
 
     data class PlayInfo(
         val videoInfo: VideoBasicInfo,
@@ -337,11 +350,24 @@ class BiliClient(
         
         // Get cid from pages array
         var cid = data.optLong("cid", 0)
-        if (cid == 0L) {
-            val pages = data.optJSONArray("pages")
-            if (pages != null && pages.length() > 0) {
-                val firstPage = pages.optJSONObject(0)
-                cid = firstPage?.optLong("cid", 0) ?: 0
+        val pages = mutableListOf<VideoPage>()
+        
+        val pagesJson = data.optJSONArray("pages")
+        if (pagesJson != null) {
+            for (i in 0 until pagesJson.length()) {
+                val pageObj = pagesJson.optJSONObject(i)
+                pageObj?.let {
+                    val pageCid = it.optLong("cid", 0)
+                    if (cid == 0L) {
+                        cid = pageCid
+                    }
+                    pages.add(VideoPage(
+                        cid = pageCid,
+                        page = it.optInt("page", i + 1),
+                        part = it.optString("part", ""),
+                        duration = it.optInt("duration", 0)
+                    ))
+                }
             }
         }
 
@@ -357,7 +383,8 @@ class BiliClient(
                 like = stat.optInt("like", 0),
                 coin = stat.optInt("coin", 0),
                 favorite = stat.optInt("favorite", 0)
-            )
+            ),
+            pages = pages
         )
     }
 

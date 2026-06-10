@@ -10,10 +10,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.qian.jianyin.bili.BiliApi
 import com.qian.jianyin.netease.api.NeteaseApiService
+import com.kyant.taglib.Picture
+import com.kyant.taglib.PropertyMap
+import com.kyant.taglib.TagLib
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.io.OutputStream
 
 /**
@@ -51,7 +56,7 @@ object DownloadManager {
     private val client = OkHttpClient()
     private val gson = Gson()
     
-    private const val DEFAULT_DOWNLOAD_DIR = "jianyin"
+    private const val DEFAULT_DOWNLOAD_DIR = "jianyin/download"
     
     /**
      * 下载歌曲
@@ -68,16 +73,15 @@ object DownloadManager {
         progressCallback: ((Float) -> Unit)? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val songDirName = sanitizeFileName("${song.name}-${song.artist}")
-            
             val validCustomUri = if (customUri != null && customUri.toString().isNotBlank()) {
                 customUri
             } else null
-            
-            val songDirUri = getOrCreateDirectory(context, validCustomUri, songDirName)
-            
+
+            // 获取下载目录（不再创建歌曲子目录）
+            val downloadDirUri = getOrCreateDownloadDirectory(context, validCustomUri)
+
             val results = mutableListOf<String>()
-            
+
             var audioUrl = song.url
 
             // 处理B站视频
@@ -106,47 +110,43 @@ object DownloadManager {
                 neteaseLrc = NeteaseApiService.getLyric(song.id)
             }
 
-            audioUrl.let { url ->
-                val audioFileName = "${sanitizeFileName(song.name)}.mp3"
-                if (!fileExists(context, songDirUri, audioFileName)) {
-                    // 下载音频文件
-                    downloadFileToUri(context, url, songDirUri, audioFileName, progressCallback, song.isBiliVideo)
-                    results.add("音频文件")
+            // 文件名：歌曲名-歌手.mp3
+            val audioFileName = "${sanitizeFileName(song.name)}-${sanitizeFileName(song.artist)}.mp3"
+
+            // 检查文件是否已存在
+            if (!fileExists(context, downloadDirUri, audioFileName)) {
+                // 先下载封面到临时文件（用于嵌入）
+                var tempCoverFile: File? = null
+                if (song.pic.isNotEmpty()) {
+                    try {
+                        tempCoverFile = File.createTempFile("temp_cover_${song.id}", ".jpg", context.cacheDir)
+                        downloadFileToTemp(context, song.pic, tempCoverFile, false)
+                    } catch (e: Exception) {
+                        Log.e("DownloadManager", "下载封面失败: ${e.message}")
+                    }
                 }
+
+                // 下载音频文件
+                downloadFileToUri(context, audioUrl, downloadDirUri, audioFileName, progressCallback, song.isBiliVideo)
+                results.add("音频文件")
+
+                // 将歌词和封面嵌入到MP3文件中
+                val audioFileUri = getFileUri(context, downloadDirUri, audioFileName)
+                val lrcContent = neteaseLrc ?: song.lrc
+
+                if (audioFileUri != null) {
+                    val embedded = embedMetadataIntoMp3WithTempCover(context, audioFileUri, tempCoverFile, lrcContent, song.name, song.artist)
+                    if (embedded) {
+                        results.add("嵌入歌词和封面")
+                    }
+                }
+
+                // 清理临时封面文件
+                tempCoverFile?.delete()
+            } else {
+                results.add("文件已存在")
             }
 
-            song.pic.let { url ->
-                if (!fileExists(context, songDirUri, "cover.jpg")) {
-                    downloadFileToUri(context, url, songDirUri, "cover.jpg", null, false)
-                    results.add("封面图片")
-                }
-            }
-
-            // 优先使用网易云歌词，其次使用 song.lrc
-            val lrcToDownload = neteaseLrc ?: song.lrc
-            lrcToDownload?.let {
-                if (!fileExists(context, songDirUri, "lyrics.lrc")) {
-                    writeTextToUri(context, songDirUri, "lyrics.lrc", it)
-                    results.add("歌词文件")
-                }
-            }
-
-            val metadata = SongMetadata(
-                id = song.id,
-                name = song.name,
-                artist = song.artist,
-                url = audioUrl,
-                pic = song.pic,
-                lrc = neteaseLrc ?: song.lrc,
-                isBiliVideo = song.isBiliVideo,
-                bvid = song.bvid,
-                cid = song.cid
-            )
-            if (!fileExists(context, songDirUri, "metadata.json")) {
-                writeTextToUri(context, songDirUri, "metadata.json", gson.toJson(metadata))
-                results.add("元数据")
-            }
-            
             Result.success("下载完成: ${results.joinToString(", ")}")
         } catch (e: Exception) {
             Result.failure(e)
@@ -207,19 +207,19 @@ object DownloadManager {
     fun getLocalSongUri(context: Context, song: Song): Uri? {
         Log.d("DownloadManager", "=== getLocalSongUri START ===")
         Log.d("DownloadManager", "Song: ${song.name} - ${song.artist}")
-        
-        val songDirName = sanitizeFileName("${song.name}-${song.artist}")
-        val audioFileName = "${sanitizeFileName(song.name)}.mp3"
-        
+
+        // 新格式：歌曲名-歌手.mp3，直接在 download 目录下
+        val audioFileName = "${sanitizeFileName(song.name)}-${sanitizeFileName(song.artist)}.mp3"
+
         // 优先尝试自定义路径（SAF）
         if (DownloadSettingsStore.isUsingCustomPath(context)) {
             val customUri = DownloadSettingsStore.getCustomUri(context)
             Log.d("DownloadManager", "Trying SAF path: customUri=${customUri?.toString() ?: "null"}")
-            
+
             if (customUri != null) {
-                val songDirUri = getDirectoryUri(context, customUri, songDirName)
-                if (songDirUri != null) {
-                    val result = getFileUri(context, songDirUri, audioFileName)
+                val downloadDirUri = getDirectoryUri(context, customUri, "download")
+                if (downloadDirUri != null) {
+                    val result = getFileUri(context, downloadDirUri, audioFileName)
                     if (result != null) {
                         Log.d("DownloadManager", "SAF path successful: $result")
                         Log.d("DownloadManager", "=== getLocalSongUri END (SAF) ===")
@@ -229,20 +229,17 @@ object DownloadManager {
                 Log.w("DownloadManager", "SAF path failed, falling back to default path")
             }
         }
-        
+
         // 回退到默认下载目录（传统文件路径）
         Log.d("DownloadManager", "Trying default file path")
         val defaultDirUri = getDefaultDownloadUri(context)
-        val songDirUri = getDirectoryUri(context, defaultDirUri, songDirName)
-        if (songDirUri != null) {
-            val result = getFileUri(context, songDirUri, audioFileName)
-            if (result != null) {
-                Log.d("DownloadManager", "Default path successful: $result")
-                Log.d("DownloadManager", "=== getLocalSongUri END (default) ===")
-                return result
-            }
+        val result = getFileUri(context, defaultDirUri, audioFileName)
+        if (result != null) {
+            Log.d("DownloadManager", "Default path successful: $result")
+            Log.d("DownloadManager", "=== getLocalSongUri END (default) ===")
+            return result
         }
-        
+
         Log.w("DownloadManager", "Both SAF and default paths failed")
         Log.d("DownloadManager", "=== getLocalSongUri END (null) ===")
         return null
@@ -250,68 +247,28 @@ object DownloadManager {
     
     /**
      * 获取本地封面文件Uri
+     * 注意：封面已嵌入MP3文件中，此函数返回null
      * @param context 上下文
      * @param song 歌曲对象
-     * @return 本地封面文件Uri，不存在则返回 null
+     * @return null（封面已嵌入MP3）
      */
     fun getLocalCoverUri(context: Context, song: Song): Uri? {
-        val songDirName = sanitizeFileName("${song.name}-${song.artist}")
-        val fileName = "cover.jpg"
-        
-        // 优先尝试自定义路径（SAF）
-        if (DownloadSettingsStore.isUsingCustomPath(context)) {
-            val customUri = DownloadSettingsStore.getCustomUri(context)
-            if (customUri != null) {
-                val songDirUri = getDirectoryUri(context, customUri, songDirName)
-                if (songDirUri != null) {
-                    val result = getFileUri(context, songDirUri, fileName)
-                    if (result != null) return result
-                }
-            }
-        }
-        
-        // 回退到默认下载目录（传统文件路径）
-        val defaultDirUri = getDefaultDownloadUri(context)
-        val songDirUri = getDirectoryUri(context, defaultDirUri, songDirName)
-        if (songDirUri != null) {
-            return getFileUri(context, songDirUri, fileName)
-        }
-        
+        // 封面已嵌入MP3文件中，不再单独保存
         return null
     }
-    
+
     /**
      * 获取本地歌词文件Uri
+     * 注意：歌词已嵌入MP3文件中，此函数返回null
      * @param context 上下文
      * @param song 歌曲对象
-     * @return 本地歌词文件Uri，不存在则返回 null
+     * @return null（歌词已嵌入MP3）
      */
     fun getLocalLrcUri(context: Context, song: Song): Uri? {
-        val songDirName = sanitizeFileName("${song.name}-${song.artist}")
-        val fileName = "lyrics.lrc"
-        
-        // 优先尝试自定义路径（SAF）
-        if (DownloadSettingsStore.isUsingCustomPath(context)) {
-            val customUri = DownloadSettingsStore.getCustomUri(context)
-            if (customUri != null) {
-                val songDirUri = getDirectoryUri(context, customUri, songDirName)
-                if (songDirUri != null) {
-                    val result = getFileUri(context, songDirUri, fileName)
-                    if (result != null) return result
-                }
-            }
-        }
-        
-        // 回退到默认下载目录（传统文件路径）
-        val defaultDirUri = getDefaultDownloadUri(context)
-        val songDirUri = getDirectoryUri(context, defaultDirUri, songDirName)
-        if (songDirUri != null) {
-            return getFileUri(context, songDirUri, fileName)
-        }
-        
+        // 歌词已嵌入MP3文件中，不再单独保存
         return null
     }
-    
+
     /**
      * 获取本地歌曲文件路径（兼容旧代码）
      * @param context 上下文
@@ -619,7 +576,241 @@ object DownloadManager {
         }
         return defaultDir
     }
+
+    /**
+     * 获取或创建下载目录
+     * @param context 上下文
+     * @param customUri 自定义基础目录Uri（SAF授权）
+     * @return 下载目录Uri
+     */
+    private fun getOrCreateDownloadDirectory(context: Context, customUri: Uri?): Uri {
+        val baseUri = customUri ?: getDefaultDownloadUri(context)
+
+        // 如果是文件URI，直接创建 download 子目录
+        if (baseUri.scheme == "file") {
+            val downloadDir = File(baseUri.path, "download")
+            if (!downloadDir.exists()) {
+                downloadDir.mkdirs()
+            }
+            return Uri.fromFile(downloadDir)
+        }
+
+        // SAF方式：在基础目录下创建 download 子目录
+        val docId = DocumentsContract.getTreeDocumentId(baseUri)
+        val documentUri = DocumentsContract.buildDocumentUriUsingTree(baseUri, docId)
+        return DocumentsContract.createDocument(
+            context.contentResolver,
+            documentUri,
+            DocumentsContract.Document.MIME_TYPE_DIR,
+            "download"
+        ) ?: throw Exception("无法创建download目录")
+    }
+
+    /**
+     * 下载文件到临时文件
+     * @param context 上下文
+     * @param url 文件URL
+     * @param tempFile 临时文件
+     * @param isBiliStream 是否为B站音频流
+     */
+    private suspend fun downloadFileToTemp(context: Context, url: String, tempFile: File, isBiliStream: Boolean) {
+        val requestBuilder = Request.Builder().url(url)
+
+        if (isBiliStream) {
+            val biliApi = BiliApi.getInstance(context)
+            val cookies = biliApi.getCookies()
+            val cookieString = if (cookies.isNotEmpty()) {
+                cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
+            } else ""
+
+            requestBuilder
+                .header("Referer", "https://www.bilibili.com")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            if (cookieString.isNotEmpty()) {
+                requestBuilder.header("Cookie", cookieString)
+            }
+        }
+
+        val request = requestBuilder.build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw Exception("下载失败: ${response.code}")
+            response.body?.byteStream()?.use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+    }
+
+    /**
+     * 使用临时封面文件将歌词和封面嵌入到MP3文件中
+     * @param context 上下文
+     * @param audioUri MP3文件Uri
+     * @param tempCoverFile 临时封面文件（可为null）
+     * @param lrcContent 歌词内容（可为null）
+     * @param songName 歌曲名称
+     * @param artistName 歌手名称
+     * @return 是否嵌入成功
+     */
+    private fun embedMetadataIntoMp3WithTempCover(
+        context: Context,
+        audioUri: Uri,
+        tempCoverFile: File?,
+        lrcContent: String?,
+        songName: String,
+        artistName: String
+    ): Boolean {
+        return try {
+            // 获取文件描述符
+            val parcelFileDescriptor = context.contentResolver.openFileDescriptor(audioUri, "rw")
+            if (parcelFileDescriptor == null) {
+                Log.e("DownloadManager", "无法获取文件描述符")
+                return false
+            }
+
+            // 创建属性 Map (PropertyMap = HashMap<String, Array<String>>)
+            val propertyMap: PropertyMap = hashMapOf()
+            propertyMap["TITLE"] = arrayOf(songName)
+            propertyMap["ARTIST"] = arrayOf(artistName)
+
+            // 嵌入歌词（MP3 使用 UNSYNCEDLYRICS）
+            if (lrcContent != null && lrcContent.isNotBlank()) {
+                propertyMap["LYRICS"] = arrayOf(lrcContent)
+                propertyMap["UNSYNCEDLYRICS"] = arrayOf(lrcContent)
+            }
+
+            // 保存文本属性
+            TagLib.savePropertyMap(parcelFileDescriptor.dup().detachFd(), propertyMap)
+
+            // 嵌入封面
+            if (tempCoverFile != null && tempCoverFile.exists()) {
+                try {
+                    val coverBytes = tempCoverFile.readBytes()
+                    val mimeType = detectPictureMimeType(coverBytes)
+                    val picture = Picture(
+                        data = coverBytes,
+                        description = "",
+                        pictureType = "Front Cover",
+                        mimeType = mimeType
+                    )
+                    TagLib.savePictures(parcelFileDescriptor.dup().detachFd(), arrayOf(picture))
+                    Log.d("DownloadManager", "封面嵌入成功 (TagLib)")
+                } catch (e: Exception) {
+                    Log.e("DownloadManager", "嵌入封面失败: ${e.message}")
+                }
+            }
+
+            // 关闭文件描述符
+            parcelFileDescriptor.close()
+
+            Log.d("DownloadManager", "MP3元数据嵌入完成")
+            true
+        } catch (e: Exception) {
+            Log.e("DownloadManager", "嵌入元数据失败: ${e.message}", e)
+            false
+        }
+    }
     
+    /**
+     * 将歌词和封面嵌入到MP3文件中
+     * @param context 上下文
+     * @param audioUri MP3文件Uri
+     * @param coverUri 封面图片Uri（可为null）
+     * @param lrcContent 歌词内容（可为null）
+     * @param songName 歌曲名称
+     * @param artistName 歌手名称
+     * @return 是否嵌入成功
+     */
+    private fun embedMetadataIntoMp3(
+        context: Context,
+        audioUri: Uri,
+        coverUri: Uri?,
+        lrcContent: String?,
+        songName: String,
+        artistName: String
+    ): Boolean {
+        return try {
+            // 获取文件描述符
+            val parcelFileDescriptor = context.contentResolver.openFileDescriptor(audioUri, "rw")
+            if (parcelFileDescriptor == null) {
+                Log.e("DownloadManager", "无法获取文件描述符")
+                return false
+            }
+
+            // 创建属性 Map (PropertyMap = HashMap<String, Array<String>>)
+            val propertyMap: PropertyMap = hashMapOf()
+            propertyMap["TITLE"] = arrayOf(songName)
+            propertyMap["ARTIST"] = arrayOf(artistName)
+
+            // 嵌入歌词（MP3 使用 UNSYNCEDLYRICS）
+            if (lrcContent != null && lrcContent.isNotBlank()) {
+                propertyMap["LYRICS"] = arrayOf(lrcContent)
+                propertyMap["UNSYNCEDLYRICS"] = arrayOf(lrcContent)
+            }
+
+            // 保存文本属性
+            TagLib.savePropertyMap(parcelFileDescriptor.dup().detachFd(), propertyMap)
+
+            // 嵌入封面
+            if (coverUri != null) {
+                try {
+                    val coverBytes = context.contentResolver.openInputStream(coverUri)?.use { it.readBytes() }
+                    if (coverBytes != null) {
+                        val mimeType = detectPictureMimeType(coverBytes)
+                        val picture = Picture(
+                            data = coverBytes,
+                            description = "",
+                            pictureType = "Front Cover",
+                            mimeType = mimeType
+                        )
+                        TagLib.savePictures(parcelFileDescriptor.dup().detachFd(), arrayOf(picture))
+                        Log.d("DownloadManager", "封面嵌入成功 (TagLib)")
+                    }
+                } catch (e: Exception) {
+                    Log.e("DownloadManager", "嵌入封面失败: ${e.message}")
+                }
+            }
+
+            // 关闭文件描述符
+            parcelFileDescriptor.close()
+
+            Log.d("DownloadManager", "MP3元数据嵌入完成")
+            true
+        } catch (e: Exception) {
+            Log.e("DownloadManager", "嵌入元数据失败: ${e.message}", e)
+            false
+        }
+    }
+
+    /**
+     * 从Uri创建临时文件
+     */
+    private fun createTempFileFromUri(context: Context, uri: Uri): File? {
+        return try {
+            val tempFile = File.createTempFile("temp_audio", ".mp3", context.cacheDir)
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                FileOutputStream(tempFile).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+            tempFile
+        } catch (e: Exception) {
+            Log.e("DownloadManager", "创建临时文件失败: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * 将文件写入Uri
+     */
+    private fun writeFileToUri(context: Context, file: File, uri: Uri) {
+        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+            file.inputStream().use { inputStream ->
+                inputStream.copyTo(outputStream)
+            }
+        }
+    }
+
     /**
      * 清理文件名中的非法字符
      * @param name 原始文件名
@@ -632,5 +823,38 @@ object DownloadManager {
             sanitized = sanitized.replace(char, '_')
         }
         return sanitized.trim()
+    }
+
+    /**
+     * 检测图片的 MIME 类型
+     * @param data 图片数据
+     * @return MIME 类型字符串
+     */
+    private fun detectPictureMimeType(data: ByteArray): String {
+        return when {
+            data.size >= 4 &&
+                    data[0] == 0xFF.toByte() &&
+                    data[1] == 0xD8.toByte() &&
+                    data[2] == 0xFF.toByte() -> "image/jpeg"
+            data.size >= 8 &&
+                    data[0] == 0x89.toByte() &&
+                    data[1] == 0x50.toByte() &&
+                    data[2] == 0x4E.toByte() &&
+                    data[3] == 0x47.toByte() &&
+                    data[4] == 0x0D.toByte() &&
+                    data[5] == 0x0A.toByte() &&
+                    data[6] == 0x1A.toByte() &&
+                    data[7] == 0x0A.toByte() -> "image/png"
+            data.size >= 12 &&
+                    data[0] == 0x52.toByte() &&
+                    data[1] == 0x49.toByte() &&
+                    data[2] == 0x46.toByte() &&
+                    data[3] == 0x46.toByte() &&
+                    data[8] == 0x57.toByte() &&
+                    data[9] == 0x45.toByte() &&
+                    data[10] == 0x42.toByte() &&
+                    data[11] == 0x50.toByte() -> "image/webp"
+            else -> "image/jpeg" // 默认为 JPEG
+        }
     }
 }

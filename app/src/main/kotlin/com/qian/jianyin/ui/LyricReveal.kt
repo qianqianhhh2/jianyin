@@ -384,7 +384,7 @@ fun AppleMusicActiveLine(
     val textStyle = TextStyle(
         fontSize = fontSize,
         fontWeight = FontWeight.Bold,
-        textAlign = TextAlign.Center,
+        textAlign = TextAlign.Start,
         letterSpacing = 0.sp
     )
 

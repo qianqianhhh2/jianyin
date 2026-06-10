@@ -46,6 +46,13 @@ data class PlaylistQueueItem(
     val songs: List<Song>
 )
 
+// 分p选择对话框状态
+data class MultiPageSelectionState(
+    val show: Boolean = false,
+    val song: Song? = null,
+    val pages: List<Song> = emptyList()
+)
+
 // 进度条样式枚举
 enum class ProgressBarStyle {
     DEFAULT,          // 默认样式
@@ -114,6 +121,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     // B站相关状态
     val biliLoginState = mutableStateOf<BiliLoginState>(BiliLoginState.Unknown)
     private val biliApi: BiliApi by lazy { BiliApi.getInstance(application) }
+    
+    // 分p选择状态
+    val multiPageSelectionState = mutableStateOf(MultiPageSelectionState())
 
     enum class BiliLoginState {
         Unknown,    // 未知状态
@@ -343,35 +353,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun syncBiliPlaylists(): List<UserSyncedPlaylist>? = withContext(Dispatchers.IO) {
         try {
             val context = getApplication<Application>()
-            val folders = biliApi.getUserFavFolders()
-            val playlists = folders.map { folder ->
-                val songs = biliApi.getFavFolderItems(folder.id)
-                UserSyncedPlaylist(
-                    id = "bili_${folder.id}",
-                    name = folder.name,
-                    coverPic = folder.cover,
-                    songs = songs.map { item ->
-                        Song(
-                            id = item.bvid,
-                            name = item.title,
-                            artist = item.owner,
-                            url = "",
-                            pic = item.pic,
-                            source = SongSource.BILI,
-                            isBiliVideo = true,
-                            bvid = item.bvid,
-                            cid = item.cid
-                        )
-                    }
-                )
-            }
-            // 保存我的歌单到 PlaylistDataStore
-            playlists.forEach { playlist ->
-                PlaylistDataStore.save(context, playlist)
-            }
-            // 触发歌单更新，通知 UI 刷新
-            withContext(Dispatchers.Main) {
-                playlistUpdateTrigger.intValue++
+            val playlists = BiliPlaylistSyncManager.getUserPlaylists(context)
+            if (playlists != null) {
+                // 保存我的歌单到 PlaylistDataStore
+                playlists.forEach { playlist ->
+                    PlaylistDataStore.save(context, playlist)
+                }
+                // 触发歌单更新，通知 UI 刷新
+                withContext(Dispatchers.Main) {
+                    playlistUpdateTrigger.intValue++
+                }
             }
             playlists
         } catch (e: Exception) {
@@ -464,6 +455,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         
         // 如果切换到心动模式，自动初始化心动模式播放列表
         if (nextMode == PlaybackMode.HEARTBEAT) {
+            initializeHeartbeatMode()
+        }
+    }
+    
+    /** 直接设置播放模式 */
+    fun setPlayMode(mode: PlaybackMode) {
+        if (playMode.value == mode) return
+        playMode.value = mode
+        Log.d("MusicVM", "播放模式设置为: $mode")
+        if (mode == PlaybackMode.HEARTBEAT) {
             initializeHeartbeatMode()
         }
     }
@@ -2371,6 +2372,132 @@ fun togglePlay() {
         mediaSessionManager.release()
         player.release()
     }
+    
+    // ========== 分p视频播放相关方法 ==========
+    
+    /**
+     * 播放歌曲或显示分p选择对话框
+     * 如果歌曲是B站分p视频，在sourceList中查找兄弟分p并显示选择对话框
+     * @return true 如果显示了分p选择对话框（调用方应直接返回，不再执行播放）
+     */
+    fun playOrShowMultiPageSelection(song: Song, sourceList: List<Song>): Boolean {
+        if (!song.isPartOfMultiPage) return false
+        
+        // 从来源列表中查找同一视频的所有分p
+        val siblingPages = sourceList.filter { 
+            it.parentBvid == song.parentBvid 
+        }.sortedBy { it.pageIndex }
+        
+        if (siblingPages.size > 1) {
+            showMultiPageSelection(song, siblingPages)
+            return true
+        }
+        return false
+    }
+    
+    /**
+     * 显示分p选择对话框
+     * @param song 触发选择的歌曲
+     * @param pages 分p列表
+     */
+    fun showMultiPageSelection(song: Song, pages: List<Song>) {
+        multiPageSelectionState.value = MultiPageSelectionState(
+            show = true,
+            song = song,
+            pages = pages
+        )
+        Log.d("MusicVM", "显示分p选择对话框，共${pages.size}个分p")
+    }
+    
+    /**
+     * 关闭分p选择对话框
+     */
+    fun dismissMultiPageSelection() {
+        multiPageSelectionState.value = MultiPageSelectionState()
+        Log.d("MusicVM", "关闭分p选择对话框")
+    }
+    
+    /**
+     * 播放选中的分p
+     * @param pageSong 选中的分p歌曲
+     */
+    fun playSelectedPage(pageSong: Song) {
+        dismissMultiPageSelection()
+        playSong(pageSong, multiPageSelectionState.value.pages)
+        Log.d("MusicVM", "播放选中的分p: ${pageSong.name}")
+    }
+    
+    /**
+     * 检查当前播放的是否是分p视频的最后一p
+     * @return true 如果是最后一p
+     */
+    fun isLastPageOfMultiPageVideo(): Boolean {
+        val current = currentSong.value ?: return false
+        if (!current.isPartOfMultiPage) return false
+        return current.pageIndex >= current.pageCount
+    }
+    
+    /**
+     * 获取当前分p在队列中的下一个分p（同一视频的）
+     * @return 下一个分p的歌曲，如果没有则返回null
+     */
+    fun getNextPageInQueue(): Song? {
+        val current = currentSong.value ?: return null
+        if (!current.isPartOfMultiPage || current.pageIndex >= current.pageCount) {
+            return null
+        }
+        
+        // 在播放队列中查找同一视频的下一个分p
+        val nextIndex = currentQueueIndex.intValue + 1
+        if (nextIndex < playQueue.size) {
+            val nextSong = playQueue[nextIndex]
+            if (nextSong.parentBvid == current.parentBvid && 
+                nextSong.pageIndex == current.pageIndex + 1) {
+                return nextSong
+            }
+        }
+        return null
+    }
+    
+    /**
+     * 检查是否需要显示分p选择对话框
+     * @param song 要播放的歌曲
+     * @return true 如果需要显示选择对话框
+     */
+    fun needShowMultiPageSelection(song: Song): Boolean {
+        // 如果是分p视频的第一p（或者不是从分p列表播放的），需要显示选择对话框
+        return song.isPartOfMultiPage && song.pageIndex == 1
+    }
+
+    /**
+     * 从播放队列中获取同一视频的所有分p
+     * @param song 参考歌曲
+     * @return 同一视频的所有分p歌曲列表
+     */
+    fun getMultiPageSongs(song: Song): List<Song> {
+        if (!song.isPartOfMultiPage) {
+            return listOf(song)
+        }
+        
+        // 从播放队列中筛选同一视频的所有分p
+        return playQueue.filter { 
+            it.parentBvid == song.parentBvid 
+        }.sortedBy { it.pageIndex }
+    }
+    
+    /**
+     * 获取当前播放进度信息（用于显示分p进度）
+     * @return Pair(当前分p索引, 总分p数)
+     */
+    fun getCurrentPageProgress(): Pair<Int, Int> {
+        val current = currentSong.value ?: return Pair(0, 0)
+        if (!current.isPartOfMultiPage) {
+            return Pair(1, 1)
+        }
+        return Pair(current.pageIndex, current.pageCount)
+    }
+
+    // ========== 歌词相关方法 ==========
     
     /**
      * 从网络获取歌词

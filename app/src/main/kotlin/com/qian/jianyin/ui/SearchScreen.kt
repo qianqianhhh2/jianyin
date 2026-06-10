@@ -514,13 +514,25 @@ fun SongItemViewV2(song: Song, cs: ColorScheme, onClick: () -> Unit) {
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    text = song.artist,
-                    color = cs.onSurfaceVariant, // 次要文字
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = song.artist,
+                        color = cs.onSurfaceVariant, // 次要文字
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    // 分p视频标识
+                    if (song.isPartOfMultiPage) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Badge(
+                            containerColor = cs.primaryContainer,
+                            contentColor = cs.onPrimaryContainer
+                        ) {
+                            Text("P${song.pageIndex}/${song.pageCount}", fontSize = 10.sp)
+                        }
+                    }
+                }
             }
         }
         
