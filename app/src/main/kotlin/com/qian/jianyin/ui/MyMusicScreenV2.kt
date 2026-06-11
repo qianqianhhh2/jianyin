@@ -196,7 +196,14 @@ fun MyMusicScreenV2(
     var showLyricFontSizeDialog by remember { mutableStateOf(false) }
     var lyricFontSize by remember {
         mutableStateOf(
-            DownloadSettingsStore.getLyricFontSize(context)
+            PlaybackSettingsStore.getLyricFontSize(context)
+        )
+    }
+
+    // 屏幕常亮设置相关状态
+    var keepScreenOnEnabled by remember {
+        mutableStateOf(
+            PlaybackSettingsStore.isKeepScreenOnEnabled(context)
         )
     }
 
@@ -2921,6 +2928,7 @@ fun MyMusicScreenV2(
                     SettingsItem("音质设置", Icons.Default.MusicNote, "下载和播放音质选项", "quality"),
                     SettingsItem("本地音乐歌词来源", Icons.Default.LibraryMusic, if (selectedLyricSource == 0) "内嵌" else "网络", "lyric"),
                     SettingsItem("歌词字体大小", Icons.Default.FormatSize, "${lyricFontSize.toInt()}sp", "lyric_font_size"),
+                    SettingsItem("屏幕常亮", Icons.Default.Visibility, "仅全屏播放器生效", "keep_screen_on"),
                     SettingsItem("歌曲淡入淡出", Icons.Default.GraphicEq, "播放暂停时音量渐变", "fade"),
                     SettingsItem("自动缓存", Icons.Default.Download, "根据歌曲播放次数，自动缓存歌曲", "auto_cache"),
                     SettingsItem("默认音乐打开方式", Icons.Default.Apps, "将本应用设为默认音乐播放器", "default_opener"),
@@ -3123,6 +3131,14 @@ fun MyMusicScreenV2(
                                                     DownloadSettingsStore.setAutoCacheEnabled(context, enabled)
                                                 }
                                             )
+                                        } else if (item.id == "keep_screen_on") {
+                                            Switch(
+                                                checked = keepScreenOnEnabled,
+                                                onCheckedChange = { enabled ->
+                                                    keepScreenOnEnabled = enabled
+                                                    PlaybackSettingsStore.setKeepScreenOnEnabled(context, enabled)
+                                                }
+                                            )
                                         } else if (item.id == "default_opener") {
                                             Switch(
                                                 checked = defaultOpenerEnabled,
@@ -3149,7 +3165,7 @@ fun MyMusicScreenV2(
                                             }
                                             "lyric" -> showLyricSourceDialog = true
                                             "lyric_font_size" -> {
-                                                lyricFontSize = DownloadSettingsStore.getLyricFontSize(context)
+                                                lyricFontSize = PlaybackSettingsStore.getLyricFontSize(context)
                                                 showLyricFontSizeDialog = true
                                             }
                                             "dark" -> {
@@ -3561,7 +3577,7 @@ fun MyMusicScreenV2(
                     },
                     confirmButton = {
                         TextButton(onClick = {
-                            DownloadSettingsStore.setLyricFontSize(context, lyricFontSize)
+                            PlaybackSettingsStore.setLyricFontSize(context, lyricFontSize)
                             showLyricFontSizeDialog = false
                         }) {
                             Text("确定")

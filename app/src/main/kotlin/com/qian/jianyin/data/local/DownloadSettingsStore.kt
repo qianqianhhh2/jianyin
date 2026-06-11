@@ -27,7 +27,6 @@ object DownloadSettingsStore {
     private const val KEY_AUTO_PLAY_ON_START = "auto_play_on_start"            // 启动时播放
     private const val KEY_THEME_SOURCE = "theme_source"                         // 0: 内置配色, 1: 取色
     private const val KEY_SEED_COLOR = "seed_color"                             // 种子色 ARGB hex
-    private const val KEY_LYRIC_FONT_SIZE = "lyric_font_size"                 // 歌词字体大小 (sp)
     // 旧版key用于迁移
     private const val KEY_CUSTOM_PATH_OLD = "custom_download_path"
 
@@ -306,28 +305,5 @@ object DownloadSettingsStore {
 
     fun setCoverColor(argb: Long) {
         _coverColorFlow.value = argb
-    }
-
-    // ========== 歌词字体大小设置 ==========
-
-    /**
-     * 获取歌词字体大小
-     * @param context 上下文
-     * @return 字体大小（sp），默认 18sp
-     */
-    fun getLyricFontSize(context: Context): Float {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getFloat(KEY_LYRIC_FONT_SIZE, 18f)
-    }
-
-    /**
-     * 设置歌词字体大小
-     * @param context 上下文
-     * @param fontSize 字体大小（sp）
-     */
-    fun setLyricFontSize(context: Context, fontSize: Float) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putFloat(KEY_LYRIC_FONT_SIZE, fontSize)
-            .apply()
     }
 }

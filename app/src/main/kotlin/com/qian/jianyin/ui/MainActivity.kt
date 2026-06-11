@@ -139,6 +139,7 @@ import com.qian.jianyin.VersionChecker
 import com.qian.jianyin.VersionUpdate
 import com.qian.jianyin.VersionUpdateDialog
 import com.qian.jianyin.DownloadSettingsStore
+import com.qian.jianyin.PlaybackSettingsStore
 import com.qian.jianyin.ui.JianYinTheme
 import com.qian.jianyin.playback.DesktopLyricService
 import com.qian.jianyin.playback.DesktopLyricSettings
@@ -1131,6 +1132,20 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
     var sleepTimerTime by remember { mutableStateOf("23:00") }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // 屏幕常亮控制
+    val keepScreenOn = remember { PlaybackSettingsStore.isKeepScreenOnEnabled(context) }
+    DisposableEffect(keepScreenOn) {
+        val window = (context as Activity).window
+        if (keepScreenOn) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            if (keepScreenOn) {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+    }
     
     // 更多菜单和播放队列：PredictiveBackHandler，手势滑动时展示动画预览
     PredictiveBackHandler(enabled = showMoreMenu || showQueue) { progress: Flow<BackEventCompat> ->
@@ -2978,7 +2993,7 @@ fun LyricList(vm: MusicViewModel) {
     // 读取歌词字体大小设置
     val context = LocalContext.current
     val lyricFontSize = remember {
-        mutableStateOf(DownloadSettingsStore.getLyricFontSize(context))
+        mutableStateOf(PlaybackSettingsStore.getLyricFontSize(context))
     }
 
     BoxWithConstraints(

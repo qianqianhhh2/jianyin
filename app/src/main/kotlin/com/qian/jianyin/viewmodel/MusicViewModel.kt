@@ -841,6 +841,33 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** 获取歌词内容用于缓存（支持多种来源） */
+    private suspend fun fetchLyricsForCache(song: Song): String? {
+        return try {
+            if (song.source == SongSource.NETEASE) {
+                // 网易云歌曲，获取双语歌词
+                val (neteaseLrc, neteaseTrans) = fetchNeteaseLyric(song)
+                if (neteaseLrc != null && neteaseTrans != null) {
+                    "$neteaseLrc\n[TRANSLATED]\n$neteaseTrans"
+                } else {
+                    neteaseLrc ?: ""
+                }
+            } else if (!song.lrc.isNullOrEmpty()) {
+                // 其他来源，从网络获取歌词
+                if (song.lrc.startsWith("http")) {
+                    api.getLrcByUrl(song.lrc)
+                } else {
+                    api.getLrcById(id = song.id)
+                }
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("MusicVM", "获取歌词用于缓存失败: ${song.name}", e)
+            null
+        }
+    }
+
     fun playNeteaseSong(song: Song, newQueue: List<Song>? = null) {
         Log.d("MusicVM", "playNeteaseSong 被调用: ${song.name}")
         viewModelScope.launch {
@@ -1236,16 +1263,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         try {
                             Log.d("MusicVM", "开始自动缓存: ${song.name}, 播放次数: $playCount")
                             // 获取歌词内容（用于缓存）
-                            val lrcContent = if (song.source == SongSource.NETEASE) {
-                                val (neteaseLrc, neteaseTrans) = fetchNeteaseLyric(song)
-                                if (neteaseLrc != null && neteaseTrans != null) {
-                                    "$neteaseLrc\n[TRANSLATED]\n$neteaseTrans"
-                                } else {
-                                    neteaseLrc ?: ""
-                                }
-                            } else {
-                                null
-                            }
+                            val lrcContent = fetchLyricsForCache(song)
                             
                             CacheManager.cacheSong(
                                 getApplication(),
@@ -1312,7 +1330,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             translatedLrcContent = neteaseTrans
                         } else {
                             // 从网络获取歌词
-                            if (!song.lrc.isNullOrEmpty()) {
+                            lrcContent = if (!song.lrc.isNullOrEmpty()) {
                                 if (song.lrc.startsWith("http")) api.getLrcByUrl(song.lrc)
                                 else api.getLrcById(id = song.id)
                             } else ""
@@ -2149,9 +2167,9 @@ fun togglePlay() {
         if (savedState != null && savedState.songs.isNotEmpty()) {
             Log.d("MusicVM", "恢复播放状态: ${savedState.songs.size}首歌曲, 当前索引: ${savedState.currentIndex}")
             
-            // 恢复播放队列
+            // 恢复播放队列（需要对反序列化后的歌曲进行normalize）
             playQueue.clear()
-            playQueue.addAll(savedState.songs)
+            playQueue.addAll(savedState.songs.map { Song.normalize(it) })
             
             // 恢复当前播放索引
             val validIndex = savedState.currentIndex.coerceIn(0, playQueue.size - 1)
@@ -2360,13 +2378,12 @@ fun togglePlay() {
                             lrcContent = neteaseLrc ?: ""
                             translatedLrcContent = neteaseTrans
                         } else {
-                            val localLrcPath = CacheManager.getCachedLrcPath(context, song)
-                            lrcContent = if (localLrcPath != null) {
-                                File(localLrcPath).readText()
-                            } else if (!song.lrc.isNullOrEmpty()) {
+                            // 从网络获取歌词
+                            lrcContent = if (!song.lrc.isNullOrEmpty()) {
                                 if (song.lrc.startsWith("http")) api.getLrcByUrl(song.lrc)
                                 else api.getLrcById(id = song.id)
                             } else ""
+                            Log.d("MusicVM", "非网易云歌曲歌词加载完成: ${song.name}, 内容长度=${lrcContent.length}")
                         }
                     }
                 }
