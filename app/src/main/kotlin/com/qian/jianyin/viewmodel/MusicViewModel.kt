@@ -240,7 +240,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
                         currentSong.value?.let { song ->
                             val context = getApplication<Application>()
-                            val localCoverPath = if (song.isLocal) null else DownloadManager.getLocalCoverPath(context, song)
+                            val localCoverPath = if (song.isLocal) null else CacheManager.getCachedCoverPath(context, song)
                             mediaSessionManager.updateMetadata(
                                 title = song.name,
                                 artist = song.artist,
@@ -796,6 +796,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
         return try {
             val context = getApplication<Application>()
+            
+            // 优先检查本地缓存
+            val cachedMp3Path = CacheManager.getCachedMp3Path(context, song)
+            if (cachedMp3Path != null) {
+                Log.d("MusicVM", "fetchNeteaseSongUrl: 使用缓存文件: ${song.name}")
+                return song.copy(url = "file://$cachedMp3Path")
+            }
+            
+            // 从网络获取URL
             val qualityLevel = DownloadSettingsStore.getPlayQuality(context)
             Log.d("MusicVM", "fetchNeteaseSongUrl: 开始获取URL，songId=${song.id}, quality=$qualityLevel")
             val url = NeteaseApiService.getSongUrl(song.id, qualityLevel)
@@ -1019,10 +1028,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 localSongPath = song.url
                 Log.d("MusicVM", "本地歌曲，使用URL作为路径: $localSongPath")
             } else {
-                // 网络歌曲，尝试获取本地下载路径
-                localSongPath = DownloadManager.getLocalSongPath(context, song)
-                localCoverPath = DownloadManager.getLocalCoverPath(context, song)
-                Log.d("MusicVM", "网络歌曲，本地路径: $localSongPath")
+                // 网络歌曲，优先检查cache目录
+                val cachedMp3Path = CacheManager.getCachedMp3Path(context, song)
+                val cachedCoverPath = CacheManager.getCachedCoverPath(context, song)
+                
+                if (cachedMp3Path != null) {
+                    // 使用cache目录中的缓存文件
+                    localSongPath = cachedMp3Path
+                    localCoverPath = cachedCoverPath
+                    Log.d("MusicVM", "使用缓存文件播放: $localSongPath")
+                }
             }
             
             val mediaMetadata = MediaMetadata.Builder()
@@ -1113,6 +1128,27 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                                 }
                                 
                                 Log.d("MusicVM", "B站视频音频流获取成功: ${song.name}")
+                                
+                                // 自动缓存：播放超过3次才缓存
+                                val statsManager = MusicStatsManager(getApplication())
+                                val playCount = statsManager.getPlayCountMap()[song.id.ifBlank { song.url }] ?: 0
+                                if (!CacheManager.isCached(getApplication(), song) && playCount > 3) {
+                                    viewModelScope.launch(Dispatchers.IO) {
+                                        try {
+                                            Log.d("MusicVM", "开始自动缓存B站视频: ${song.name}, 播放次数: $playCount")
+                                            CacheManager.cacheSong(
+                                                getApplication(),
+                                                song,
+                                                mp3Url = finalUrl,
+                                                coverUrl = song.pic,
+                                                lrcContent = null
+                                            )
+                                            Log.d("MusicVM", "自动缓存B站视频完成: ${song.name}")
+                                        } catch (e: Exception) {
+                                            Log.e("MusicVM", "自动缓存B站视频失败: ${song.name}", e)
+                                        }
+                                    }
+                                }
                             } else {
                                 Log.e("MusicVM", "B站视频音频流获取失败")
                             }
@@ -1191,6 +1227,39 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 mediaSessionManager.updatePlaybackState(true, 0L)
                 
                 Log.d("MusicVM", "播放器已开始准备: ${song.name}")
+                
+                // 自动缓存：播放超过3次才缓存
+                val statsManager = MusicStatsManager(getApplication())
+                val playCount = statsManager.getPlayCountMap()[song.id.ifBlank { song.url }] ?: 0
+                if (!song.isLocal && localSongPath == null && !CacheManager.isCached(getApplication(), song) && playCount > 3) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        try {
+                            Log.d("MusicVM", "开始自动缓存: ${song.name}, 播放次数: $playCount")
+                            // 获取歌词内容（用于缓存）
+                            val lrcContent = if (song.source == SongSource.NETEASE) {
+                                val (neteaseLrc, neteaseTrans) = fetchNeteaseLyric(song)
+                                if (neteaseLrc != null && neteaseTrans != null) {
+                                    "$neteaseLrc\n[TRANSLATED]\n$neteaseTrans"
+                                } else {
+                                    neteaseLrc ?: ""
+                                }
+                            } else {
+                                null
+                            }
+                            
+                            CacheManager.cacheSong(
+                                getApplication(),
+                                song,
+                                mp3Url = finalUrl,
+                                coverUrl = song.pic,
+                                lrcContent = lrcContent
+                            )
+                            Log.d("MusicVM", "自动缓存完成: ${song.name}")
+                        } catch (e: Exception) {
+                            Log.e("MusicVM", "自动缓存失败: ${song.name}", e)
+                        }
+                    }
+                }
             }
             
         } catch (e: Exception) {
@@ -1229,26 +1298,25 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     val customLyrics = SongCustomDataStore.getLyrics(getApplication(), song.url)
                     if (customLyrics.isNotEmpty()) {
                         lrcContent = customLyrics
-                    } else if (song.source == SongSource.NETEASE) {
-                        // 网易云歌曲，使用网易云歌词接口
-                        val (neteaseLrc, neteaseTrans) = fetchNeteaseLyric(song)
-                        lrcContent = neteaseLrc ?: ""
-                        translatedLrcContent = neteaseTrans
                     } else {
-                        // 尝试获取本地下载的歌词或从网络获取
-                        val localLrcPath = DownloadManager.getLocalLrcPath(getApplication(), song)
-                        lrcContent = if (localLrcPath != null) {
-                            if (localLrcPath.startsWith("content://")) {
-                                val uri = Uri.parse(localLrcPath)
-                                getApplication<Application>().contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
-                            } else {
-                                File(localLrcPath).readText()
-                            }
-                        } else if (!song.lrc.isNullOrEmpty()) {
+                        // 优先从cache目录读取缓存歌词
+                        val (cachedLrc, cachedTrans) = CacheManager.readCachedLyricsBilingual(getApplication(), song)
+                        if (cachedLrc != null) {
+                            lrcContent = cachedLrc
+                            translatedLrcContent = cachedTrans
+                            Log.d("MusicVM", "使用缓存歌词: ${song.name}, 有翻译=${cachedTrans != null}")
+                        } else if (song.source == SongSource.NETEASE) {
+                            // 网易云歌曲，使用网易云歌词接口
+                            val (neteaseLrc, neteaseTrans) = fetchNeteaseLyric(song)
+                            lrcContent = neteaseLrc ?: ""
+                            translatedLrcContent = neteaseTrans
+                        } else {
                             // 从网络获取歌词
-                            if (song.lrc.startsWith("http")) api.getLrcByUrl(song.lrc)
-                            else api.getLrcById(id = song.id)
-                        } else ""
+                            if (!song.lrc.isNullOrEmpty()) {
+                                if (song.lrc.startsWith("http")) api.getLrcByUrl(song.lrc)
+                                else api.getLrcById(id = song.id)
+                            } else ""
+                        }
                     }
                 }
                 
@@ -2145,8 +2213,8 @@ fun togglePlay() {
                 localSongPath = song.url
                 Log.d("MusicVM", "本地歌曲，使用URL作为路径: $localSongPath")
             } else {
-                localSongPath = DownloadManager.getLocalSongPath(context, song)
-                localCoverPath = DownloadManager.getLocalCoverPath(context, song)
+                localSongPath = CacheManager.getCachedMp3Path(context, song)
+                localCoverPath = CacheManager.getCachedCoverPath(context, song)
                 Log.d("MusicVM", "网络歌曲，本地路径: $localSongPath")
             }
             
@@ -2280,22 +2348,26 @@ fun togglePlay() {
                     val customLyrics = SongCustomDataStore.getLyrics(context, song.url)
                     if (customLyrics.isNotEmpty()) {
                         lrcContent = customLyrics
-                    } else if (song.source == SongSource.NETEASE) {
-                        val (neteaseLrc, neteaseTrans) = fetchNeteaseLyric(song)
-                        lrcContent = neteaseLrc ?: ""
-                        translatedLrcContent = neteaseTrans
                     } else {
-                        val localLrcPath = DownloadManager.getLocalLrcPath(context, song)
-                        lrcContent = if (localLrcPath != null) {
-                            if (localLrcPath.startsWith("content://")) {
-                                context.contentResolver.openInputStream(Uri.parse(localLrcPath))?.bufferedReader()?.use { it.readText() } ?: ""
-                            } else {
+                        // 优先从cache目录读取缓存歌词
+                        val (cachedLrc, cachedTrans) = CacheManager.readCachedLyricsBilingual(context, song)
+                        if (cachedLrc != null) {
+                            lrcContent = cachedLrc
+                            translatedLrcContent = cachedTrans
+                            Log.d("MusicVM", "使用缓存歌词: ${song.name}, 有翻译=${cachedTrans != null}")
+                        } else if (song.source == SongSource.NETEASE) {
+                            val (neteaseLrc, neteaseTrans) = fetchNeteaseLyric(song)
+                            lrcContent = neteaseLrc ?: ""
+                            translatedLrcContent = neteaseTrans
+                        } else {
+                            val localLrcPath = CacheManager.getCachedLrcPath(context, song)
+                            lrcContent = if (localLrcPath != null) {
                                 File(localLrcPath).readText()
-                            }
-                        } else if (!song.lrc.isNullOrEmpty()) {
-                            if (song.lrc.startsWith("http")) api.getLrcByUrl(song.lrc)
-                            else api.getLrcById(id = song.id)
-                        } else ""
+                            } else if (!song.lrc.isNullOrEmpty()) {
+                                if (song.lrc.startsWith("http")) api.getLrcByUrl(song.lrc)
+                                else api.getLrcById(id = song.id)
+                            } else ""
+                        }
                     }
                 }
                 
@@ -2559,8 +2631,8 @@ fun togglePlay() {
             return
         }
         
-        // 检查是否已经下载
-        if (DownloadManager.getLocalSongPath(context, song) != null) {
+        // 检查是否已经缓存
+        if (CacheManager.isCached(context, song)) {
             return
         }
         
@@ -2570,13 +2642,13 @@ fun togglePlay() {
         
         Log.d("MusicVM", "自动缓存检查 - 歌曲: ${song.name}, 播放次数: $playCount")
         
-        // 播放次数超过3次则自动下载
+        // 播放次数超过3次则自动缓存
         if (playCount > 3) {
-            Log.d("MusicVM", "自动缓存触发 - 歌曲: ${song.name}, 开始下载")
+            Log.d("MusicVM", "自动缓存触发 - 歌曲: ${song.name}, 开始缓存")
             
             viewModelScope.launch(Dispatchers.IO) {
                 try {
-                    val result = DownloadManager.downloadSong(context, song)
+                    val result = CacheManager.cacheSong(context, song)
                     if (result.isSuccess) {
                         Log.d("MusicVM", "自动缓存成功 - ${song.name}: ${result.getOrThrow()}")
                     } else {

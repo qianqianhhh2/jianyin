@@ -2975,6 +2975,12 @@ fun LyricList(vm: MusicViewModel) {
     val playedColor = Color.White.copy(alpha = 0.55f)
     val inactiveColor = Color.White.copy(alpha = 0.30f)
 
+    // 读取歌词字体大小设置
+    val context = LocalContext.current
+    val lyricFontSize = remember {
+        mutableStateOf(DownloadSettingsStore.getLyricFontSize(context))
+    }
+
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -3010,14 +3016,14 @@ fun LyricList(vm: MusicViewModel) {
                             currentTimeMs = currentPositionMs,
                             activeColor = activeColor,
                             inactiveColor = activeColor.copy(alpha = 0.30f),
-                            fontSize = 18.sp,
+                            fontSize = lyricFontSize.value.sp,
                             fadeWidth = 12.dp
                         )
                     } else {
                         Text(
                             text = line.text,
                             color = if (isPlayed) playedColor else inactiveColor,
-                            fontSize = 18.sp,
+                            fontSize = lyricFontSize.value.sp,
                             fontWeight = FontWeight.Medium,
                             textAlign = TextAlign.Start,
                             modifier = Modifier.fillMaxWidth()
@@ -3028,7 +3034,7 @@ fun LyricList(vm: MusicViewModel) {
                             text = t.text,
                             color = if (isCurrent) activeColor.copy(alpha = 0.85f)
                                     else Color.White.copy(alpha = if (isPlayed) 0.55f else 0.30f),
-                            fontSize = 14.sp,
+                            fontSize = (lyricFontSize.value * 0.78f).sp,
                             fontWeight = FontWeight.Normal,
                             textAlign = TextAlign.Start,
                             maxLines = 2,

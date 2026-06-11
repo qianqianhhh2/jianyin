@@ -21,7 +21,8 @@ data class UserSyncedPlaylist(
     val name: String,
     val coverPic: String,
     val songs: List<Song>,
-    val isLocalPlaylist: Boolean = false
+    val isLocalPlaylist: Boolean = false,
+    val sortOrder: Int = 0
 )
 
 /**
@@ -100,6 +101,7 @@ object PlaylistDataStore {
         val prefsPlaylists = getPlaylistsFromPrefs(context)
         val localPlaylists = getLocalPlaylists(context)
         return (prefsPlaylists + localPlaylists).map { it.copy(songs = it.songs.map { s -> Song.normalize(s) }) }
+            .sortedBy { it.sortOrder }
     }
 
     private fun getPlaylistsFromPrefs(context: Context): List<UserSyncedPlaylist> {
@@ -255,5 +257,29 @@ object PlaylistDataStore {
             .apply()
         val dir = getPlaylistsDir(context)
         dir.listFiles()?.forEach { it.delete() }
+    }
+
+    fun savePlaylistsOrder(context: Context, playlists: List<UserSyncedPlaylist>) {
+        val allPlaylists = getAll(context).toMutableList()
+        val updatedLists = allPlaylists.map { existing ->
+            val newIndex = playlists.indexOfFirst { it.id == existing.id }
+            if (newIndex != -1) {
+                existing.copy(sortOrder = newIndex)
+            } else {
+                existing
+            }
+        }
+        // Save all playlists with updated sortOrder
+        updatedLists.forEach { playlist ->
+            if (playlist.isLocalPlaylist) {
+                savePlaylistToFile(context, playlist)
+            }
+        }
+        // Save non-local playlists to prefs
+        val nonLocalPlaylists = updatedLists.filter { !it.isLocalPlaylist }
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY, gson.toJson(nonLocalPlaylists))
+            .apply()
     }
 }

@@ -20,6 +20,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
+import org.json.JSONObject
 
 /**
  * 歌曲元数据类
@@ -106,8 +107,8 @@ object DownloadManager {
                 } else {
                     throw Exception("无法获取网易云下载链接，请先登录")
                 }
-                // 同时获取歌词
-                neteaseLrc = NeteaseApiService.getLyric(song.id)
+                // 同时获取双语歌词（原文+翻译）
+                neteaseLrc = fetchNeteaseBilingualLyric(song.id)
             }
 
             // 文件名：歌曲名-歌手.mp3
@@ -247,26 +248,108 @@ object DownloadManager {
     
     /**
      * 获取本地封面文件Uri
-     * 注意：封面已嵌入MP3文件中，此函数返回null
+     * 从嵌入MP3的封面中提取，保存到临时文件并返回Uri
      * @param context 上下文
      * @param song 歌曲对象
-     * @return null（封面已嵌入MP3）
+     * @return 封面Uri（临时文件），不存在则返回 null
      */
     fun getLocalCoverUri(context: Context, song: Song): Uri? {
-        // 封面已嵌入MP3文件中，不再单独保存
-        return null
+        val audioUri = getLocalSongUri(context, song) ?: return null
+        return try {
+            val parcelFileDescriptor = context.contentResolver.openFileDescriptor(audioUri, "r")
+                ?: return null
+            val pictures = TagLib.getPictures(parcelFileDescriptor.dup().detachFd())
+            parcelFileDescriptor.close()
+            if (pictures.isNotEmpty()) {
+                val coverData = pictures.first().data
+                val tempCoverFile = File.createTempFile("embedded_cover_", ".jpg", context.cacheDir)
+                tempCoverFile.writeBytes(coverData)
+                Uri.fromFile(tempCoverFile)
+            } else null
+        } catch (e: Exception) {
+            Log.e("DownloadManager", "读取嵌入封面失败: ${e.message}")
+            null
+        }
     }
 
     /**
      * 获取本地歌词文件Uri
-     * 注意：歌词已嵌入MP3文件中，此函数返回null
+     * 从嵌入MP3的歌词中提取，保存到临时文件并返回Uri
      * @param context 上下文
      * @param song 歌曲对象
-     * @return null（歌词已嵌入MP3）
+     * @return 歌词Uri（临时文件），不存在则返回 null
      */
     fun getLocalLrcUri(context: Context, song: Song): Uri? {
-        // 歌词已嵌入MP3文件中，不再单独保存
-        return null
+        val lyrics = readEmbeddedLyrics(context, song) ?: return null
+        return try {
+            val tempLrcFile = File.createTempFile("embedded_lrc_", ".lrc", context.cacheDir)
+            tempLrcFile.writeText(lyrics)
+            Uri.fromFile(tempLrcFile)
+        } catch (e: Exception) {
+            Log.e("DownloadManager", "写入临时歌词文件失败: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * 从已下载的单文件MP3中读取嵌入歌词
+     * @param context 上下文
+     * @param song 歌曲对象
+     * @return 歌词文本，不存在则返回 null
+     */
+    fun readEmbeddedLyrics(context: Context, song: Song): String? {
+        val audioUri = getLocalSongUri(context, song) ?: return null
+        return try {
+            val parcelFileDescriptor = context.contentResolver.openFileDescriptor(audioUri, "r")
+                ?: return null
+            val lyricsValues = TagLib.getMetadataPropertyValues(
+                parcelFileDescriptor.dup().detachFd(), "LYRICS"
+            )
+            parcelFileDescriptor.close()
+            lyricsValues?.firstOrNull()
+        } catch (e: Exception) {
+            Log.e("DownloadManager", "读取嵌入歌词失败: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * 从已下载的单文件MP3中读取双语歌词（原文 + 翻译）
+     * @return Pair(原文歌词, 翻译歌词)，任一为null表示不存在
+     */
+    fun readEmbeddedLyricsBilingual(context: Context, song: Song): Pair<String?, String?> {
+        val combined = readEmbeddedLyrics(context, song) ?: return null to null
+        val separator = "\n[TRANSLATED]\n"
+        val idx = combined.indexOf(separator)
+        return if (idx == -1) {
+            combined to null
+        } else {
+            combined.substring(0, idx) to combined.substring(idx + separator.length)
+        }
+    }
+
+    /**
+     * 获取网易云双语歌词（原文+翻译），用分隔符合并
+     */
+    private suspend fun fetchNeteaseBilingualLyric(songId: String): String? {
+        return try {
+            val response = NeteaseApiService.getLyricRaw(songId)
+            val root = JSONObject(response)
+            val yrc = root.optJSONObject("yrc")?.optString("lyric").orEmpty()
+            val lrc = root.optJSONObject("lrc")?.optString("lyric").orEmpty()
+            val original = yrc.ifBlank { lrc.ifBlank { null } } ?: return null
+            val translated = root.optJSONObject("ytlrc")?.optString("lyric")
+                ?: root.optJSONObject("tlyric")?.optString("lyric")
+                ?: ""
+            if (translated.isNotBlank()) {
+                "$original\n[TRANSLATED]\n$translated"
+            } else {
+                original
+            }
+        } catch (e: Exception) {
+            Log.e("DownloadManager", "获取网易云双语歌词失败: $songId", e)
+            null
+        }
     }
 
     /**
@@ -584,20 +667,12 @@ object DownloadManager {
      * @return 下载目录Uri
      */
     private fun getOrCreateDownloadDirectory(context: Context, customUri: Uri?): Uri {
-        val baseUri = customUri ?: getDefaultDownloadUri(context)
+        // 默认下载目录已包含 "download" 子路径，直接返回
+        if (customUri == null) return getDefaultDownloadUri(context)
 
-        // 如果是文件URI，直接创建 download 子目录
-        if (baseUri.scheme == "file") {
-            val downloadDir = File(baseUri.path, "download")
-            if (!downloadDir.exists()) {
-                downloadDir.mkdirs()
-            }
-            return Uri.fromFile(downloadDir)
-        }
-
-        // SAF方式：在基础目录下创建 download 子目录
-        val docId = DocumentsContract.getTreeDocumentId(baseUri)
-        val documentUri = DocumentsContract.buildDocumentUriUsingTree(baseUri, docId)
+        // SAF自定义路径：在用户选中的目录下创建 download 子目录
+        val docId = DocumentsContract.getTreeDocumentId(customUri)
+        val documentUri = DocumentsContract.buildDocumentUriUsingTree(customUri, docId)
         return DocumentsContract.createDocument(
             context.contentResolver,
             documentUri,

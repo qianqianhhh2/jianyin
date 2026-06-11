@@ -192,6 +192,14 @@ fun MyMusicScreenV2(
         )
     } // 0: 内嵌, 1: 网络
 
+    // 歌词字体大小设置相关状态
+    var showLyricFontSizeDialog by remember { mutableStateOf(false) }
+    var lyricFontSize by remember {
+        mutableStateOf(
+            DownloadSettingsStore.getLyricFontSize(context)
+        )
+    }
+
     // 歌曲淡入淡出设置
     var fadeEnabled by remember {
         mutableStateOf(
@@ -609,7 +617,20 @@ fun MyMusicScreenV2(
 
                 // 同步歌单标题栏：改为 Add 图标
                 item {
-                    SectionHeaderV6("我的歌单", Icons.Default.LibraryMusic, onClick = { showAddDialog = true }, actionIcon = Icons.Default.Add)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.LibraryMusic, null, tint = colorScheme.primary, modifier = Modifier.size(24.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("我的歌单", color = colorScheme.onBackground, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        }
+                        IconButton(onClick = { showAddDialog = true }) {
+                            Icon(Icons.Default.Add, null, tint = colorScheme.primary)
+                        }
+                    }
                 }
 
                 if (syncedPlaylists.isEmpty()) {
@@ -1090,6 +1111,79 @@ fun MyMusicScreenV2(
                                 }
                             )
                         )
+
+                        // 菜单项：上移
+                        if (syncedPlaylists.size > 1) {
+                            val currentIndex = syncedPlaylists.indexOfFirst { it.id == selectedPlaylistForMenu?.id }
+                            val canMoveUp = currentIndex > 0
+                            ListItem(
+                                headlineContent = {
+                                    Text(
+                                        "上移",
+                                        color = if (!canMoveUp) colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                        else colorScheme.onSurface
+                                    )
+                                },
+                                leadingContent = {
+                                    Icon(
+                                        Icons.Default.ArrowUpward,
+                                        null,
+                                        tint = if (!canMoveUp) colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                        else colorScheme.onSurface
+                                    )
+                                },
+                                modifier = Modifier.clickable(
+                                    enabled = canMoveUp,
+                                    onClick = {
+                                        if (canMoveUp && selectedPlaylistForMenu != null) {
+                                            val index = syncedPlaylists.indexOfFirst { it.id == selectedPlaylistForMenu!!.id }
+                                            if (index > 0) {
+                                                val temp = syncedPlaylists[index]
+                                                syncedPlaylists[index] = syncedPlaylists[index - 1]
+                                                syncedPlaylists[index - 1] = temp
+                                                PlaylistDataStore.savePlaylistsOrder(context, syncedPlaylists.toList())
+                                            }
+                                        }
+                                        selectedPlaylistForMenu = null
+                                    }
+                                )
+                            )
+
+                            // 菜单项：下移
+                            val canMoveDown = currentIndex < syncedPlaylists.lastIndex
+                            ListItem(
+                                headlineContent = {
+                                    Text(
+                                        "下移",
+                                        color = if (!canMoveDown) colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                        else colorScheme.onSurface
+                                    )
+                                },
+                                leadingContent = {
+                                    Icon(
+                                        Icons.Default.ArrowDownward,
+                                        null,
+                                        tint = if (!canMoveDown) colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                        else colorScheme.onSurface
+                                    )
+                                },
+                                modifier = Modifier.clickable(
+                                    enabled = canMoveDown,
+                                    onClick = {
+                                        if (canMoveDown && selectedPlaylistForMenu != null) {
+                                            val index = syncedPlaylists.indexOfFirst { it.id == selectedPlaylistForMenu!!.id }
+                                            if (index < syncedPlaylists.lastIndex) {
+                                                val temp = syncedPlaylists[index]
+                                                syncedPlaylists[index] = syncedPlaylists[index + 1]
+                                                syncedPlaylists[index + 1] = temp
+                                                PlaylistDataStore.savePlaylistsOrder(context, syncedPlaylists.toList())
+                                            }
+                                        }
+                                        selectedPlaylistForMenu = null
+                                    }
+                                )
+                            )
+                        }
 
                         // 菜单项：删除
                         ListItem(
@@ -2826,6 +2920,7 @@ fun MyMusicScreenV2(
                     SettingsItem("下载位置设置", Icons.Default.Folder, "设置下载文件保存路径", "folder"),
                     SettingsItem("音质设置", Icons.Default.MusicNote, "下载和播放音质选项", "quality"),
                     SettingsItem("本地音乐歌词来源", Icons.Default.LibraryMusic, if (selectedLyricSource == 0) "内嵌" else "网络", "lyric"),
+                    SettingsItem("歌词字体大小", Icons.Default.FormatSize, "${lyricFontSize.toInt()}sp", "lyric_font_size"),
                     SettingsItem("歌曲淡入淡出", Icons.Default.GraphicEq, "播放暂停时音量渐变", "fade"),
                     SettingsItem("自动缓存", Icons.Default.Download, "根据歌曲播放次数，自动缓存歌曲", "auto_cache"),
                     SettingsItem("默认音乐打开方式", Icons.Default.Apps, "将本应用设为默认音乐播放器", "default_opener"),
@@ -3053,6 +3148,10 @@ fun MyMusicScreenV2(
                                                 showAudioQualityScreen = true
                                             }
                                             "lyric" -> showLyricSourceDialog = true
+                                            "lyric_font_size" -> {
+                                                lyricFontSize = DownloadSettingsStore.getLyricFontSize(context)
+                                                showLyricFontSizeDialog = true
+                                            }
                                             "dark" -> {
                                                 selectedDarkMode = DownloadSettingsStore.getDarkMode(context)
                                                 showDarkModeDialog = true
@@ -3378,6 +3477,101 @@ fun MyMusicScreenV2(
                             showLyricSourceDialog = false
                         }) {
                             Text("确定")
+                        }
+                    },
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            }
+
+            // 歌词字体大小设置对话框
+            if (showLyricFontSizeDialog) {
+                AlertDialog(
+                    onDismissRequest = { showLyricFontSizeDialog = false },
+                    title = { Text("歌词字体大小") },
+                    text = {
+                        Column {
+                            // 预览区域
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(80.dp)
+                                    .background(colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "预览歌词文字",
+                                    fontSize = lyricFontSize.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colorScheme.onBackground
+                                )
+                            }
+                            Spacer(Modifier.height(16.dp))
+
+                            // 拖动条
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("12sp", fontSize = 12.sp, color = colorScheme.onSurfaceVariant)
+                                Slider(
+                                    value = lyricFontSize,
+                                    onValueChange = { lyricFontSize = it },
+                                    valueRange = 12f..32f,
+                                    steps = 19, // 12到32共21个值，步长1，steps=19
+                                    modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+                                    colors = SliderDefaults.colors(
+                                        activeTrackColor = colorScheme.primary,
+                                        thumbColor = colorScheme.primary
+                                    )
+                                )
+                                Text("32sp", fontSize = 12.sp, color = colorScheme.onSurfaceVariant)
+                            }
+
+                            // 当前值显示
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    "当前: ${lyricFontSize.toInt()}sp",
+                                    fontSize = 14.sp,
+                                    color = colorScheme.primary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
+                            // 恢复默认按钮
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                TextButton(onClick = {
+                                    lyricFontSize = 18f
+                                }) {
+                                    Text(
+                                        "恢复默认",
+                                        fontSize = 13.sp,
+                                        color = colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            DownloadSettingsStore.setLyricFontSize(context, lyricFontSize)
+                            showLyricFontSizeDialog = false
+                        }) {
+                            Text("确定")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = {
+                            showLyricFontSizeDialog = false
+                        }) {
+                            Text("取消")
                         }
                     },
                     containerColor = MaterialTheme.colorScheme.surface
