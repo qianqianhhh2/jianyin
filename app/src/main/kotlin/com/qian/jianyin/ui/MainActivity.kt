@@ -3,9 +3,6 @@ package com.qian.jianyin
 import android.os.Bundle
 import android.net.Uri
 import android.view.View
-import android.view.ViewConfiguration
-import android.view.WindowInsets
-import android.view.WindowInsetsController
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -119,8 +116,6 @@ import android.os.VibratorManager
 import android.util.Log
 import android.app.Activity
 import android.view.Window
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import android.graphics.Color as AndroidColor
 import android.widget.Toast
 import kotlinx.coroutines.CancellationException
@@ -940,62 +935,60 @@ fun MainScreenFramework(vm: MusicViewModel = viewModel()) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
-            // 移除外层 Column 的 navigationBarsPadding，让背景沉浸
-            Column(modifier = Modifier
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
-                .then(
-                    @OptIn(ExperimentalHazeApi::class)
-                    Modifier.hazeEffect(
-                        state = hazeState,
-                        style = HazeStyle(
-                            backgroundColor = MaterialTheme.colorScheme.surface,
-                            tint = HazeTint(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
+            if (!vm.isPlayerSheetVisible.value) {
+                Column(modifier = Modifier
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
+                    .then(
+                        @OptIn(ExperimentalHazeApi::class)
+                        Modifier.hazeEffect(
+                            state = hazeState,
+                            style = HazeStyle(
+                                backgroundColor = MaterialTheme.colorScheme.surface,
+                                tint = HazeTint(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
+                            )
                         )
                     )
-                )
-            ) {
-                val isPlaying by remember { vm.isPlaying }
-                val currentSong by remember { vm.currentSong }
-                AnimatedVisibility(
-                    visible = currentSong != null,
-                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
                 ) {
-                    MiniPlayerBar(vm)
-                }
-                
-                NavigationBar(
-                    // 关键：NavigationBar 默认就会处理 navigationBars 并在内部预留 Padding
-                    // 这样背景颜色会充满底部小白条区域，但图标会被推上去
-                    windowInsets = NavigationBarDefaults.windowInsets,
-                    containerColor = Color.Transparent
-                ) {
-                    navItems.forEachIndexed { index, item ->
-                        val isSelected = selectedItem == index
-                        NavigationBarItem(
-                            icon = { 
-                                Icon(
-                                    imageVector = if (isSelected) item.selectedIcon else item.unselectedIcon, 
-                                    contentDescription = item.label
-                                )
-                            },
-                            label = { 
-                                Text(item.label)
-                            },
-                            selected = isSelected,
-                            onClick = { selectedItem = index },
-                            colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            ),
-                            alwaysShowLabel = false
-                        )
+                    val isPlaying by remember { vm.isPlaying }
+                    val currentSong by remember { vm.currentSong }
+                    AnimatedVisibility(
+                        visible = currentSong != null,
+                        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                    ) {
+                        MiniPlayerBar(vm)
+                    }
+                    
+                    NavigationBar(
+                        windowInsets = NavigationBarDefaults.windowInsets,
+                        containerColor = Color.Transparent
+                    ) {
+                        navItems.forEachIndexed { index, item ->
+                            val isSelected = selectedItem == index
+                            NavigationBarItem(
+                                icon = { 
+                                    Icon(
+                                        imageVector = if (isSelected) item.selectedIcon else item.unselectedIcon, 
+                                        contentDescription = item.label
+                                    )
+                                },
+                                label = { 
+                                    Text(item.label)
+                                },
+                                selected = isSelected,
+                                onClick = { selectedItem = index },
+                                colors = NavigationBarItemDefaults.colors(
+                                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                alwaysShowLabel = false
+                            )
+                        }
                     }
                 }
-                // 移除了之前的 Spacer(Modifier.windowInsetsBottomHeight...)
             }
         }
     ) { innerPadding ->
@@ -1167,18 +1160,20 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
         showPlayModeDialog = false
     }
 
-    // 只隐藏传统的三大金刚键，不隐藏小白条
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        val window = (context as Activity).window
-        val insetsController = window.insetsController
-        if (insetsController != null) {
-            // 检查系统导航模式
-            val hasBackKey = ViewConfiguration.get(context).hasPermanentMenuKey()
-            
-            // 只有在传统的三大金刚键模式下才隐藏导航栏
-            if (hasBackKey) {
-                insetsController.hide(WindowInsets.Type.navigationBars())
-                insetsController.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    val window = (context as Activity).window
+    DisposableEffect(Unit) {
+        val originalNavColor = window.navigationBarColor
+        val originalContrastEnforced = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced
+        } else false
+        window.navigationBarColor = AndroidColor.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
+        onDispose {
+            window.navigationBarColor = originalNavColor
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.isNavigationBarContrastEnforced = originalContrastEnforced
             }
         }
     }
@@ -1398,7 +1393,9 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
 
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(bottom = 32.dp * (0.5f + (1f - lrcProgress) * 0.5f))
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .padding(bottom = 32.dp * (0.5f + (1f - lrcProgress) * 0.5f))
             ) {
                 // 歌曲标题：歌词模式下淡出
                 val titleAlpha = 1f - lrcProgress
@@ -3003,12 +3000,13 @@ fun LyricList(vm: MusicViewModel) {
         contentAlignment = Alignment.Center
     ) {
         val centerPad = maxHeight / 5f
+        val navBarPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.Start,
-            contentPadding = PaddingValues(top = centerPad, bottom = 4.dp)
+            contentPadding = PaddingValues(top = centerPad, bottom = centerPad + navBarPadding)
         ) {
             itemsIndexed(vm.currentLrc, key = { _, line -> "${line.startTimeMs}:${line.endTimeMs}" }) { index, line ->
                 val isCurrent by remember {
