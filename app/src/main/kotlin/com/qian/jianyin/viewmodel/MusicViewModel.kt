@@ -1981,13 +1981,10 @@ fun togglePlay() {
         Log.d("MusicVM", "歌单队列重排序: from=$fromIndex, to=$toIndex, 当前播放歌单索引: ${currentPlaylistIndex.intValue}")
     }
     
-    // 辅助方法
-    private val yrcLineRegex = Regex("""\[\d+,\s*\d+]\(\d+,""")
-    
     /** 自动检测并解析歌词：YRC → 逐字, LRC → 逐行 */
     private fun parseLyricAuto(content: String): List<LyricEntry> {
         if (content.isBlank()) return emptyList()
-        return if (yrcLineRegex.containsMatchIn(content)) {
+        return if (YRC_LINE_REGEX.containsMatchIn(content)) {
             parseYrc(content)
         } else {
             parseLrc(content)
@@ -2392,16 +2389,20 @@ fun togglePlay() {
                 currentTranslatedLrc.clear()
                 if (lrcContent.isNotEmpty()) {
                     currentLrc.addAll(parseLyricAuto(lrcContent))
+                    Log.d("MusicVM", "歌词加载完成: currentLrc.size=${currentLrc.size}, lrcContent长度=${lrcContent.length}")
                 } else {
                     currentLrc.add(LyricEntry(0, 5000, "暂无歌词"))
+                    Log.d("MusicVM", "歌词为空，使用暂无歌词占位")
                 }
                 if (!translatedLrcContent.isNullOrBlank()) {
                     currentTranslatedLrc.addAll(parseLyricAuto(translatedLrcContent))
+                    Log.d("MusicVM", "翻译歌词加载完成: size=${currentTranslatedLrc.size}")
                 }
             } catch (e: Exception) {
                 currentLrc.clear()
                 currentTranslatedLrc.clear()
                 currentLrc.add(LyricEntry(0, 5000, "暂无歌词"))
+                Log.e("MusicVM", "歌词加载异常", e)
             }
         }
         
@@ -2681,6 +2682,9 @@ fun togglePlay() {
     companion object {
         private const val FADE_DURATION_MS = 500L
         private const val FADE_STEP_MS = 50L
+        
+        /** YRC歌词行正则表达式（静态常量，类加载时初始化） */
+        private val YRC_LINE_REGEX = Regex("""\[\d+,\s*\d+]\(\d+,""")
 
         /**
          * 静态方法：获取历史记录

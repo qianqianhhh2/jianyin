@@ -2127,8 +2127,8 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                     }
                                 },
                                 modifier = Modifier.clickable {
-                                    val songsToAdd = selectedSongs.mapNotNull { url ->
-                                        vm.playQueue.find { it.url == url }
+                                    val songsToAdd = selectedSongs.mapNotNull { key ->
+                                        vm.playQueue.find { (it.id.isNotBlank() && it.id == key) || it.url == key }
                                     }
                                     var addedCount = 0
                                     songsToAdd.forEach { s ->
@@ -2185,8 +2185,8 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                     onClick = {
                         if (createPlaylistName.isNotBlank()) {
                             val newPlaylist = PlaylistDataStore.createPlaylist(context, createPlaylistName.trim())
-                            val songsToAdd = selectedSongs.mapNotNull { url ->
-                                vm.playQueue.find { it.url == url }
+                            val songsToAdd = selectedSongs.mapNotNull { key ->
+                                vm.playQueue.find { (it.id.isNotBlank() && it.id == key) || it.url == key }
                             }
                             var addedCount = 0
                             songsToAdd.forEach { s ->
