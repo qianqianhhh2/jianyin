@@ -3,6 +3,7 @@ package com.qian.jianyin
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
@@ -69,7 +70,8 @@ object PermissionManager {
      * 跳转到MANAGE_EXTERNAL_STORAGE权限设置页面
      */
     fun openManageExternalStorageSettings(context: Context) {
-        val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+        intent.data = Uri.fromParts("package", context.packageName, null)
         context.startActivity(intent)
     }
 }
