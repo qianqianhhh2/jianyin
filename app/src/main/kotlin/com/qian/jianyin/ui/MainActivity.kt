@@ -9,6 +9,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -133,6 +135,7 @@ import com.qian.jianyin.PermissionCheck
 import com.qian.jianyin.VersionChecker
 import com.qian.jianyin.VersionUpdate
 import com.qian.jianyin.VersionUpdateDialog
+import com.qian.jianyin.FirstDayDialog
 import com.qian.jianyin.DownloadSettingsStore
 import com.qian.jianyin.PlaybackSettingsStore
 import com.qian.jianyin.ui.JianYinTheme
@@ -228,7 +231,13 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         // 记录应用启动（用户统计）
-        UserStatsManager(this).recordAppOpen()
+        val userStats = UserStatsManager(this)
+        userStats.recordAppOpen()
+        val isFirstDay = userStats.isFirstDay() && !userStats.isMilestoneShown("first_day")
+        val consecutiveDays = userStats.getConsecutiveDays()
+        val isWeekMilestone = consecutiveDays == 7 && !userStats.isMilestoneShown("week")
+        val isMonthMilestone = consecutiveDays == 30 && !userStats.isMilestoneShown("month")
+        val isYearMilestone = consecutiveDays == 365 && !userStats.isMilestoneShown("year")
         
         // 初始化网易云 API
         com.qian.jianyin.netease.api.NeteaseApiService.init(this)
@@ -421,6 +430,18 @@ class MainActivity : ComponentActivity() {
             val showVersionUpdateDialog = remember { mutableStateOf(false) }
             val versionUpdate = remember { mutableStateOf<VersionUpdate?>(null) }
             
+            // 第一天弹窗状态
+            val showFirstDayDialog = remember { mutableStateOf(isFirstDay) }
+            
+            // 连续一周弹窗状态
+            val showWeekDialog = remember { mutableStateOf(isWeekMilestone) }
+            
+            // 连续一月弹窗状态
+            val showMonthDialog = remember { mutableStateOf(isMonthMilestone) }
+            
+            // 连续一年弹窗状态
+            val showYearDialog = remember { mutableStateOf(isYearMilestone) }
+            
             JianYinTheme {
                 if (isFirstLaunch.value) {
                     OnboardingScreen(onComplete = {
@@ -491,6 +512,48 @@ class MainActivity : ComponentActivity() {
                         versionUpdate = versionUpdate.value,
                         onDismissRequest = {
                             showVersionUpdateDialog.value = false
+                        }
+                    )
+                    
+                    // 第一天弹窗
+                    FirstDayDialog(
+                        isVisible = showFirstDayDialog.value,
+                        onDismissRequest = {
+                            showFirstDayDialog.value = false
+                            userStats.markMilestoneShown("first_day")
+                        }
+                    )
+                    
+                    // 连续一周弹窗
+                    FirstDayDialog(
+                        isVisible = showWeekDialog.value,
+                        title = "连续启动一周",
+                        content = "你已经连续启动一周了！good",
+                        onDismissRequest = {
+                            showWeekDialog.value = false
+                            userStats.markMilestoneShown("week")
+                        }
+                    )
+                    
+                    // 连续一月弹窗
+                    FirstDayDialog(
+                        isVisible = showMonthDialog.value,
+                        title = "连续启动一个月",
+                        content = "你已经连续启动一个月了！坚持就是胜利",
+                        onDismissRequest = {
+                            showMonthDialog.value = false
+                            userStats.markMilestoneShown("month")
+                        }
+                    )
+                    
+                    // 连续一年弹窗
+                    FirstDayDialog(
+                        isVisible = showYearDialog.value,
+                        title = "连续启动一年",
+                        content = "你已经连续启动一年了！太强了",
+                        onDismissRequest = {
+                            showYearDialog.value = false
+                            userStats.markMilestoneShown("year")
                         }
                     )
                 }
@@ -935,7 +998,11 @@ fun MainScreenFramework(vm: MusicViewModel = viewModel()) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
-            if (!vm.isPlayerSheetVisible.value) {
+            AnimatedVisibility(
+                visible = !vm.isPlayerSheetVisible.value,
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+            ) {
                 Column(modifier = Modifier
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
                     .then(
@@ -1110,7 +1177,7 @@ fun MiniPlayerBar(vm: MusicViewModel) {
  * 显示完整播放器界面，包含封面、歌词、控制按钮等
  * @param vm 音乐视图模型
  */
-@OptIn(ExperimentalAnimationApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalAnimationApi::class, ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? = null) {
     val song = vm.currentSong.value ?: return
@@ -1236,170 +1303,175 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
             ))
         ))
 
-        // --- 统一动画进度：0=封面模式，1=歌词模式 ---
-        val lrcProgress by animateFloatAsState(
-            targetValue = if (showLrc) 1f else 0f,
+        // --- 标题/歌手淡出动画进度（歌词模式下渐隐） ---
+        val titleAlpha by animateFloatAsState(
+            targetValue = if (showLrc) 0f else 1f,
             animationSpec = tween(350, easing = FastOutSlowInEasing)
         )
-        
-        // 记录中间区域的尺寸，用于计算封面位移动画
-        var centerBoxWidthPx by remember { mutableFloatStateOf(0f) }
-        var centerBoxHeightPx by remember { mutableFloatStateOf(0f) }
-        val density = LocalDensity.current
+        val titleOffsetY by animateFloatAsState(
+            targetValue = if (showLrc) -60f else 0f,
+            animationSpec = tween(350, easing = FastOutSlowInEasing)
+        )
 
-        Column(Modifier.fillMaxSize().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            // 顶部栏：非歌词模式 [←↓箭头 | 三点]，歌词模式 [小封面+标题 | ↓箭头 | 三点]
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 48.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // 左侧内容
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (!showLrc) {
-                        // 非歌词模式：左下箭头（隐藏播放器）
-                        IconButton(onClick = { vm.isPlayerSheetVisible.value = false }) {
-                            Icon(Icons.Default.KeyboardArrowDown, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(40.dp))
-                        }
-                    } else {
-                        // 歌词模式：小封面 + 标题
-                        Card(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { showLrc = !showLrc },
-                            shape = RoundedCornerShape(8.dp),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                        ) {
-                            AsyncImage(
-                                model = song.pic,
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                                error = painterResource(id = getRandomPlaceholderId())
-                            )
-                        }
-                        Column(
-                            modifier = Modifier.padding(start = 8.dp).weight(1f)
-                        ) {
-                            Text(
-                                song.name,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                song.artist,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-                // 右侧：隐藏按钮（歌词模式下显示）+ 三点菜单
-                if (showLrc) {
-                    IconButton(onClick = { vm.isPlayerSheetVisible.value = false }) {
-                        Icon(Icons.Default.KeyboardArrowDown, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(40.dp))
-                    }
-                }
-                IconButton(onClick = { showMoreMenu = true }) {
-                    Icon(Icons.Default.MoreVert, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(28.dp))
-                }
-            }
-
-            // 中间区域：封面 — 统一外框处理点击，避免元素穿透
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .onSizeChanged { 
-                        centerBoxWidthPx = it.width.toFloat()
-                        centerBoxHeightPx = it.height.toFloat()
-                    }
-                    .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { showLrc = !showLrc },
-                contentAlignment = Alignment.Center
-            ) {
-                // 封面卡片
-                val coverScale = 1f - lrcProgress * (1f - 40f / 300f)
-                val targetTransX = -(centerBoxWidthPx / 2f) + 24f * density.density + 20f * density.density
-                val targetTransY = -(centerBoxHeightPx / 2f) + 48f * density.density + 20f * density.density
-                val translateX = targetTransX * lrcProgress
-                val translateY = targetTransY * lrcProgress
-                
-                Card(
+        SharedTransitionLayout {
+            Column(Modifier.fillMaxSize().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                // 顶部栏 + 中间区域：包裹在 AnimatedContent 中实现共享元素切换
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth(0.85f)
-                        .aspectRatio(1f)
-                        .clip(RoundedCornerShape(24.dp))
-                        .graphicsLayer {
-                            scaleX = coverScale
-                            scaleY = coverScale
-                            translationX = translateX
-                            translationY = translateY
-                            alpha = 1f - lrcProgress
-                            clip = true
-                        },
-                    shape = RoundedCornerShape(24.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = (8f * (1f - lrcProgress)).dp)
+                        .weight(1f)
+                        .fillMaxWidth()
                 ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        AsyncImage(
-                            song.pic,
-                            null,
-                            Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                            error = painterResource(id = getRandomPlaceholderId())
-                        )
-                        // 分p视频胶囊标识
-                        if (song.isPartOfMultiPage && song.pageCount > 1) {
-                            MultiPageTaijiBadge(
-                                pageIndex = song.pageIndex,
-                                pageCount = song.pageCount,
+                    AnimatedContent(
+                        targetState = showLrc,
+                        transitionSpec = {
+                            fadeIn(tween(350, easing = FastOutSlowInEasing)) togetherWith
+                            fadeOut(tween(350, easing = FastOutSlowInEasing))
+                        },
+                        label = "playerMode",
+                        modifier = Modifier.fillMaxSize()
+                    ) { isLrc ->
+                        Column(Modifier.fillMaxSize()) {
+                            // 顶部栏
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = 48.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (!isLrc) {
+                                    // 封面模式：左隐藏按钮
+                                    IconButton(onClick = { vm.isPlayerSheetVisible.value = false }) {
+                                        Icon(Icons.Default.KeyboardArrowDown, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(40.dp))
+                                    }
+                                    Spacer(Modifier.weight(1f))
+                                } else {
+                                    // 歌词模式：小封面（共享元素）+ 标题
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Card(
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .sharedElement(
+                                                    rememberSharedContentState(key = "fullscreen_cover"),
+                                                    animatedVisibilityScope = this@AnimatedContent
+                                                )
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { showLrc = !showLrc },
+                                            shape = RoundedCornerShape(8.dp),
+                                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                                        ) {
+                                            AsyncImage(
+                                                model = song.pic,
+                                                contentDescription = null,
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop,
+                                                error = painterResource(id = getRandomPlaceholderId())
+                                            )
+                                        }
+                                        Column(modifier = Modifier.padding(start = 8.dp)) {
+                                            Text(
+                                                song.name,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                song.artist,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontSize = 12.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                }
+                                // 右区：歌词模式下显示隐藏按钮
+                                if (isLrc) {
+                                    IconButton(onClick = { vm.isPlayerSheetVisible.value = false }) {
+                                        Icon(Icons.Default.KeyboardArrowDown, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(40.dp))
+                                    }
+                                }
+                                // 三点菜单始终可见
+                                IconButton(onClick = { showMoreMenu = true }) {
+                                    Icon(Icons.Default.MoreVert, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(28.dp))
+                                }
+                            }
+
+                            // 中间区域
+                            Box(
                                 modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(8.dp)
-                            )
+                                    .weight(1f)
+                                    .fillMaxWidth()
+                                    .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { showLrc = !showLrc },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (!isLrc) {
+                                    // 封面模式：大封面（共享元素）
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth(0.85f)
+                                            .aspectRatio(1f)
+                                            .sharedElement(
+                                                rememberSharedContentState(key = "fullscreen_cover"),
+                                                animatedVisibilityScope = this@AnimatedContent
+                                            )
+                                            .clip(RoundedCornerShape(24.dp)),
+                                        shape = RoundedCornerShape(24.dp),
+                                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                                    ) {
+                                        Box(modifier = Modifier.fillMaxSize()) {
+                                            AsyncImage(
+                                                song.pic,
+                                                null,
+                                                Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop,
+                                                error = painterResource(id = getRandomPlaceholderId())
+                                            )
+                                            // 分p视频胶囊标识
+                                            if (song.isPartOfMultiPage && song.pageCount > 1) {
+                                                MultiPageTaijiBadge(
+                                                    pageIndex = song.pageIndex,
+                                                    pageCount = song.pageCount,
+                                                    modifier = Modifier
+                                                        .align(Alignment.BottomEnd)
+                                                        .padding(8.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // 歌词模式：歌词列表
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .fillMaxHeight(0.95f)
+                                            .align(Alignment.TopStart),
+                                        shape = RoundedCornerShape(0.dp),
+                                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                                        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentAlignment = Alignment.CenterStart
+                                        ) {
+                                            LyricList(vm)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-                
-                // 歌词卡片：底部留白减半给歌词，左边缘贴屏
-                if (showLrc || lrcProgress > 0.01f) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .fillMaxHeight(0.95f)
-                            .align(Alignment.TopStart)
-                            .graphicsLayer { alpha = lrcProgress },
-                        shape = RoundedCornerShape(0.dp),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
-                    ) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-                            LyricList(vm)
-                        }
-                    }
-                }
-            }
 
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .navigationBarsPadding()
-                    .padding(bottom = 32.dp * (0.5f + (1f - lrcProgress) * 0.5f))
+                    .padding(bottom = (12f * (0.5f + titleAlpha * 0.833f)).dp)
             ) {
                 // 歌曲标题：歌词模式下淡出
-                val titleAlpha = 1f - lrcProgress
-                val titleOffsetY = -lrcProgress * 60f
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
@@ -1412,7 +1484,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                     Text(song.name, color = MaterialTheme.colorScheme.onSurface, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                     Text(song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 16.sp, textAlign = TextAlign.Center)
                 }
-                Spacer(Modifier.height(16.dp * titleAlpha))
+                Spacer(Modifier.height((16f * titleAlpha).dp))
                 MusicSlider(vm)
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
@@ -1590,6 +1662,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                 Spacer(Modifier.height(8.dp))
             }
         }
+    }
     }
     
     // 定时关闭对话框

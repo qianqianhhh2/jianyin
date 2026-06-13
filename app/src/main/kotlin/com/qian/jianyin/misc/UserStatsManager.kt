@@ -91,6 +91,26 @@ class UserStatsManager(private val context: Context) {
         }
     }
 
+    /**
+     * 判断是否为第一天使用（open_days 仅有今天一条记录）
+     * 需在 recordAppOpen() 之后调用
+     */
+    fun isFirstDay(): Boolean {
+        val today = dateFormat.format(Date())
+        val openDays = getOpenDaysSet()
+        return openDays.size == 1 && openDays.contains(today)
+    }
+
+    // ========== 里程碑弹窗标记 ==========
+
+    fun isMilestoneShown(milestone: String): Boolean {
+        return prefs.getBoolean("milestone_shown_$milestone", false)
+    }
+
+    fun markMilestoneShown(milestone: String) {
+        prefs.edit().putBoolean("milestone_shown_$milestone", true).apply()
+    }
+
     // ========== 常听时段统计 ==========
 
     fun recordPlayHour() {
