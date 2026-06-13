@@ -125,6 +125,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import android.content.Intent
+import android.provider.Settings
 import android.content.Context
 import java.io.File
 import com.qian.jianyin.OnboardingManager
@@ -643,20 +644,17 @@ class MainActivity : ComponentActivity() {
         neteaseLoginLauncher.launch(intent)
     }
     
-    // 请求悬浮窗权限的回调
     private val requestOverlayPermissionLauncher = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        Log.d("DesktopLyric", "requestOverlayPermission result: isGranted=$isGranted")
-        if (isGranted) {
-            // 权限已授予，启动桌面歌词服务
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) {
+        val granted = checkOverlayPermission()
+        Log.d("DesktopLyric", "requestOverlayPermission result: isGranted=$granted")
+        if (granted) {
             Log.d("DesktopLyric", "Permission granted, starting lyric service")
             startDesktopLyricService()
-            // 调用回调通知UI更新
             overlayPermissionCallback?.invoke(true)
         } else {
             Log.d("DesktopLyric", "Permission denied")
-            Toast.makeText(this, "需要悬浮窗权限才能使用桌面歌词", Toast.LENGTH_SHORT).show()
             overlayPermissionCallback?.invoke(false)
         }
     }
@@ -671,7 +669,11 @@ class MainActivity : ComponentActivity() {
         overlayPermissionCallback = callback
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (!checkOverlayPermission()) {
-                requestOverlayPermissionLauncher.launch(android.Manifest.permission.SYSTEM_ALERT_WINDOW)
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+                requestOverlayPermissionLauncher.launch(intent)
             } else {
                 callback(true)
             }
@@ -765,7 +767,6 @@ fun toggleDesktopLyric(
                     Toast.makeText(context, "已开启桌面歌词", Toast.LENGTH_SHORT).show()
                     Log.d("DesktopLyric", "Desktop lyric opened successfully")
                 } else {
-                    Toast.makeText(context, "请在系统设置中开启悬浮窗权限", Toast.LENGTH_SHORT).show()
                     Log.d("DesktopLyric", "Permission denied, cannot open lyric")
                 }
             }
