@@ -5,54 +5,90 @@ import com.qian.jianyin.LyricEntry
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Point
 import android.os.Build
+import android.os.Bundle
 import android.os.IBinder
 import android.util.Log
 import android.view.Gravity
-import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.PopupWindow
-import android.widget.SeekBar
 import android.widget.TextView
-import android.widget.ToggleButton
 import androidx.annotation.ColorInt
 import androidx.annotation.Dimension
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.qian.jianyin.ui.JianYinTheme
 
-/**
- * 桌面歌词服务
- * 
- * 提供悬浮窗歌词显示功能，支持拖动、自定义样式等特性。
- */
 class DesktopLyricService : Service() {
+
+    private class ServiceLifecycleOwner : LifecycleOwner, SavedStateRegistryOwner {
+        private val lifecycleRegistry = LifecycleRegistry(this)
+        private val savedStateRegistryController = SavedStateRegistryController.create(this)
+        override val lifecycle: Lifecycle get() = lifecycleRegistry
+        override val savedStateRegistry: SavedStateRegistry get() = savedStateRegistryController.savedStateRegistry
+        fun dispatchEvent(event: Lifecycle.Event) { lifecycleRegistry.handleLifecycleEvent(event) }
+        fun performRestore(savedState: Bundle?) { savedStateRegistryController.performRestore(savedState) }
+    }
 
     companion object {
         private const val TAG = "DesktopLyricService"
         
-        // 当前歌词数据
         private var currentLyrics = mutableListOf<LyricEntry>()
         private var currentLineIndex = 0
         private var isPlaying = false
         
-        // 服务实例引用
         private var instance: DesktopLyricService? = null
         
-        // 是否有待处理的歌词更新
         private var pendingUpdate = false
-        
-        /**
-         * 更新歌词数据
-         */
+
         fun updateLyric(lyrics: List<LyricEntry>, lineIndex: Int, playing: Boolean = true) {
             Log.d(TAG, "updateLyric: lyrics size=${lyrics.size}, lineIndex=$lineIndex, playing=$playing")
             currentLyrics.clear()
@@ -69,67 +105,70 @@ class DesktopLyricService : Service() {
                 Log.w(TAG, "updateLyric: instance is null, lyrics saved for later update")
             }
         }
-        
-        /**
-         * 更新播放状态
-         */
+
         fun updatePlayingState(playing: Boolean) {
             Log.d(TAG, "updatePlayingState: playing=$playing")
             isPlaying = playing
         }
-        
-        /**
-         * 检查服务是否正在运行
-         */
+
         fun isRunning(): Boolean {
             val running = instance != null
             Log.d(TAG, "isRunning: $running")
             return running
         }
+
+        fun updateFontSize(size: Float) {
+            instance?.let {
+                it.currentFontSize = size
+                it.lyricTextView.textSize = size
+            }
+        }
+
+        fun updateTextColor(@ColorInt color: Int) {
+            instance?.let {
+                it.currentTextColor = color
+                it.lyricTextView.setTextColor(color)
+            }
+        }
+
+        fun updateLockState(locked: Boolean) {
+            instance?.let {
+                it.isLocked = locked
+            }
+        }
     }
 
-    // 悬浮窗参数
     private lateinit var windowManager: WindowManager
     private lateinit var layoutParams: WindowManager.LayoutParams
+    private lateinit var rootLayout: FrameLayout
     private lateinit var lyricLayout: LinearLayout
     private lateinit var lyricTextView: TextView
-    private lateinit var lyricTextView2: TextView
     
-    // 拖动相关
     private var initialX = 0
     private var initialY = 0
     private var initialTouchX = 0f
     private var initialTouchY = 0f
     private var isDragging = false
+    private var screenWidth = 0
+    private var screenHeight = 0
     
-    // 歌词状态
     private var displayedLyric = ""
-    private var displayedLyric2 = ""
     
-    // 动画协程
-    private var fadeJob: Job? = null
-    
-    // 设置相关
     private var isLocked = false
     private var currentFontSize = 20f
     @ColorInt private var currentTextColor = Color.WHITE
-    @ColorInt private var currentSecondaryColor = Color.parseColor("#80FFFFFF")
     
-    // 设置弹窗
-    private var settingsPopup: PopupWindow? = null
-    private var longPressStartTime = 0L
-    private var isLongPress = false
-    
-    // 双击检测
     private var lastTapTime = 0L
-    private val DOUBLE_TAP_THRESHOLD = 300 // 双击间隔阈值（毫秒）
+    private val DOUBLE_TAP_THRESHOLD = 300
+
+    private var settingsComposeView: ComposeView? = null
+    private var settingsLifecycleOwner: ServiceLifecycleOwner? = null
 
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "onCreate: DesktopLyricService created")
         instance = this
         
-        // 加载保存的设置
         loadSettings()
         
         try {
@@ -139,7 +178,6 @@ class DesktopLyricService : Service() {
             createLyricWindow()
             Log.d(TAG, "onCreate: Lyric window created")
             
-            // 检查是否有待处理的歌词更新
             if (pendingUpdate) {
                 Log.d(TAG, "onCreate: Found pending lyric update, applying now")
                 updateLyricView()
@@ -154,30 +192,11 @@ class DesktopLyricService : Service() {
     }
 
     private fun loadSettings() {
-        Log.d(TAG, "loadSettings: Checking if settings exist...")
-        if (DesktopLyricSettings.hasSettings(this)) {
-            val settings = DesktopLyricSettings.getSettings(this)
-            Log.d(TAG, "loadSettings: Settings exist, loading values:")
-            Log.d(TAG, "  - fontSize: ${settings.fontSize}")
-            Log.d(TAG, "  - textColor: ${Integer.toHexString(settings.textColor)}")
-            Log.d(TAG, "  - highlightColor: ${Integer.toHexString(settings.highlightColor)}")
-            Log.d(TAG, "  - positionX: ${settings.positionX}")
-            Log.d(TAG, "  - positionY: ${settings.positionY}")
-            Log.d(TAG, "  - enabled (isLocked): ${settings.enabled}")
-            
-            currentFontSize = settings.fontSize
-            currentTextColor = settings.textColor
-            currentSecondaryColor = settings.highlightColor
-            isLocked = settings.enabled
-            
-            Log.d(TAG, "loadSettings: Successfully loaded settings into variables")
-        } else {
-            Log.d(TAG, "loadSettings: No saved settings found, using default values:")
-            Log.d(TAG, "  - fontSize: $currentFontSize (default)")
-            Log.d(TAG, "  - textColor: ${Integer.toHexString(currentTextColor)} (default)")
-            Log.d(TAG, "  - highlightColor: ${Integer.toHexString(currentSecondaryColor)} (default)")
-            Log.d(TAG, "  - isLocked: $isLocked (default)")
-        }
+        val settings = DesktopLyricSettings.getSettings(this)
+        currentFontSize = settings.fontSize
+        currentTextColor = settings.textColor
+        isLocked = settings.enabled
+        Log.d(TAG, "loadSettings: fontSize=$currentFontSize, textColor=${Integer.toHexString(currentTextColor)}, isLocked=$isLocked, positionX=${settings.positionX}, positionY=${settings.positionY}")
     }
 
     @SuppressLint("InflateParams")
@@ -188,13 +207,13 @@ class DesktopLyricService : Service() {
             val windowSize = Point()
             @Suppress("DEPRECATION")
             windowManager.defaultDisplay.getSize(windowSize)
-            Log.d(TAG, "createLyricWindow: Screen size - width=${windowSize.x}, height=${windowSize.y}")
+            screenWidth = windowSize.x
+            screenHeight = windowSize.y
+            Log.d(TAG, "createLyricWindow: Screen size - width=$screenWidth, height=$screenHeight")
             
-            // 加载保存的位置
             val savedSettings = DesktopLyricSettings.getSettings(this)
             
             layoutParams = WindowManager.LayoutParams().apply {
-                // 设置悬浮窗类型
                 type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     Log.d(TAG, "createLyricWindow: Using TYPE_APPLICATION_OVERLAY (API 26+)")
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -204,53 +223,45 @@ class DesktopLyricService : Service() {
                     WindowManager.LayoutParams.TYPE_PHONE
                 }
                 
-                // 设置标志
                 flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                         WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                 Log.d(TAG, "createLyricWindow: Flags set - NOT_FOCUSABLE, LAYOUT_IN_SCREEN, LAYOUT_NO_LIMITS")
                 
-                // 设置格式
                 format = PixelFormat.TRANSLUCENT
                 Log.d(TAG, "createLyricWindow: Format set to TRANSLUCENT")
                 
-                // 设置位置和大小 - 应用保存的位置
-                width = WindowManager.LayoutParams.WRAP_CONTENT
+                width = (resources.displayMetrics.widthPixels * 0.96).toInt()
                 height = WindowManager.LayoutParams.WRAP_CONTENT
                 gravity = Gravity.CENTER_HORIZONTAL or Gravity.TOP
-                x = savedSettings.positionX
-                y = savedSettings.positionY
+                val halfW = width / 2
+                x = savedSettings.positionX.coerceIn(-halfW, halfW)
+                y = savedSettings.positionY.coerceAtLeast(0)
                 Log.d(TAG, "createLyricWindow: Position - x=$x, y=$y (loaded from settings)")
                 
-                // 设置透明度
                 alpha = 1f
             }
             
-            // 创建布局
+            val lifecycleOwner = ServiceLifecycleOwner()
+            lifecycleOwner.performRestore(null)
+            lifecycleOwner.dispatchEvent(Lifecycle.Event.ON_CREATE)
+            settingsLifecycleOwner = lifecycleOwner
+            
+            rootLayout = FrameLayout(this).apply {
+                setViewTreeLifecycleOwner(lifecycleOwner)
+                setViewTreeSavedStateRegistryOwner(lifecycleOwner)
+            }
+            
+            lifecycleOwner.dispatchEvent(Lifecycle.Event.ON_START)
+            lifecycleOwner.dispatchEvent(Lifecycle.Event.ON_RESUME)
+            
             lyricLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
                 setPadding(dpToPx(32), dpToPx(16), dpToPx(32), dpToPx(16))
-                
-                // 创建上一句歌词TextView
-                lyricTextView2 = TextView(context).apply {
-                    textSize = currentFontSize * 0.7f
-                    setTextColor(currentSecondaryColor)
-                    textAlignment = View.TEXT_ALIGNMENT_CENTER
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply {
-                        bottomMargin = dpToPx(8)
-                    }
-                }
-                addView(lyricTextView2)
-                Log.d(TAG, "createLyricWindow: lyricTextView2 created with color=${Integer.toHexString(currentSecondaryColor)}")
-                
-                // 创建当前歌词TextView
+
                 lyricTextView = TextView(context).apply {
                     textSize = currentFontSize
-                    setTextColor(currentTextColor)
                     textAlignment = View.TEXT_ALIGNMENT_CENTER
                     setTypeface(null, android.graphics.Typeface.BOLD)
                     layoutParams = LinearLayout.LayoutParams(
@@ -258,17 +269,19 @@ class DesktopLyricService : Service() {
                         LinearLayout.LayoutParams.WRAP_CONTENT
                     )
                 }
+                lyricTextView.setTextColor(currentTextColor)
                 addView(lyricTextView)
                 Log.d(TAG, "createLyricWindow: lyricTextView created with color=${Integer.toHexString(currentTextColor)}")
-                
-                setOnTouchListener { _, event ->
-                    handleTouchEvent(event)
-                }
             }
+            rootLayout.addView(lyricLayout)
             Log.d(TAG, "createLyricWindow: All TextViews created with fontSize=$currentFontSize")
             Log.d(TAG, "createLyricWindow: Layout created")
             
-            windowManager.addView(lyricLayout, layoutParams)
+            rootLayout.setOnTouchListener { _, event ->
+                handleTouchEvent(event)
+            }
+            
+            windowManager.addView(rootLayout, layoutParams)
             Log.d(TAG, "createLyricWindow: Window added to WindowManager successfully")
             
         } catch (e: SecurityException) {
@@ -285,6 +298,26 @@ class DesktopLyricService : Service() {
 
     @SuppressLint("ClickableViewAccessibility")
     private fun handleTouchEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_OUTSIDE) {
+            if (settingsComposeView != null) {
+                hideSettings()
+                return true
+            }
+            return false
+        }
+
+        if (settingsComposeView != null) {
+            val popupLocation = IntArray(2)
+            settingsComposeView?.getLocationOnScreen(popupLocation)
+            val popupW = settingsComposeView?.width ?: 0
+            val popupH = settingsComposeView?.height ?: 0
+            val inPopup = event.rawX >= popupLocation[0] && event.rawX <= popupLocation[0] + popupW &&
+                    event.rawY >= popupLocation[1] && event.rawY <= popupLocation[1] + popupH
+            if (inPopup) {
+                return false
+            }
+        }
+
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 if (!isLocked) {
@@ -303,28 +336,34 @@ class DesktopLyricService : Service() {
                     
                     if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
                         isDragging = true
-                        layoutParams.x = initialX + deltaX
-                        layoutParams.y = initialY + deltaY
-                        windowManager.updateViewLayout(lyricLayout, layoutParams)
+                        val newX = initialX + deltaX
+                        val newY = initialY + deltaY
+                        val halfW = layoutParams.width / 2
+                        val viewH = rootLayout.height
+                        layoutParams.x = newX.coerceIn(-halfW, halfW)
+                        layoutParams.y = newY.coerceIn(0, (screenHeight - viewH).coerceAtLeast(0))
+                        windowManager.updateViewLayout(rootLayout, layoutParams)
                     }
                 }
                 return true
             }
             MotionEvent.ACTION_UP -> {
                 if (isDragging) {
-                    // 保存位置
                     isDragging = false
                     DesktopLyricSettings.savePosition(this, layoutParams.x, layoutParams.y)
                     return true
                 }
                 
-                // 双击检测（无论是否锁定）
+                if (settingsComposeView != null) {
+                    hideSettings()
+                    return true
+                }
+                
                 val currentTime = System.currentTimeMillis()
                 if (currentTime - lastTapTime < DOUBLE_TAP_THRESHOLD) {
-                    // 双击打开设置菜单
-                    Log.d(TAG, "Double tap detected, showing settings popup")
-                    showSettingsPopup(initialTouchX.toInt(), initialTouchY.toInt())
-                    lastTapTime = 0 // 重置，防止连续触发
+                    Log.d(TAG, "Double tap detected, showing settings")
+                    showSettings()
+                    lastTapTime = 0
                     return true
                 }
                 lastTapTime = currentTime
@@ -334,252 +373,278 @@ class DesktopLyricService : Service() {
         return false
     }
 
-    private fun showSettingsPopup(x: Int, y: Int) {
-        Log.d(TAG, "showSettingsPopup: Showing settings popup at ($x, $y)")
-        
-        // 保存当前位置
-        val currentX = layoutParams.x
-        val currentY = layoutParams.y
-        
-        // 如果弹窗已显示，先关闭
-        settingsPopup?.dismiss()
-        
-        // 创建设置布局
-        val settingsLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16))
-            setBackgroundColor(Color.parseColor("#CC000000"))
-            
-            // 标题
-            addView(TextView(context).apply {
-                text = "歌词设置"
-                textSize = 16f
-                setTextColor(Color.WHITE)
-                setTypeface(null, android.graphics.Typeface.BOLD)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    bottomMargin = dpToPx(12)
-                }
-            })
-            
-            // 颜色选择区域（可滑动）
-            val colorScrollView = android.widget.HorizontalScrollView(context).apply {
-                isHorizontalScrollBarEnabled = false
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    dpToPx(48)
-                ).apply {
-                    bottomMargin = dpToPx(12)
-                }
-                
-                // 颜色列表
-                val colorLayout = LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    setPadding(dpToPx(4), 0, dpToPx(4), 0)
-                }
-                
-                // 预设颜色按钮
-                val colors = arrayOf(
-                    Color.WHITE,
-                    Color.BLACK,
-                    Color.RED,
-                    Color.GREEN,
-                    Color.BLUE,
-                    Color.YELLOW,
-                    Color.parseColor("#FFD700"), // 金色
-                    Color.parseColor("#FF69B4"), // 粉色
-                    Color.parseColor("#9B59B6"), // 紫色
-                    Color.parseColor("#795548")  // 棕色
-                )
-                
-                colors.forEach { color ->
-                    colorLayout.addView(View(context).apply {
-                        setBackgroundColor(color)
-                        layoutParams = LinearLayout.LayoutParams(
-                            dpToPx(32),
-                            dpToPx(32)
-                        ).apply {
-                            marginEnd = dpToPx(8)
-                            topMargin = dpToPx(8)
-                        }
-                        // 添加边框
-                        setBackgroundResource(android.R.drawable.btn_default)
-                        // 设置实际颜色
-                        setBackgroundColor(color)
-                        setOnClickListener {
-                            currentTextColor = color
-                            lyricTextView.setTextColor(color)
-                            // 更新次要颜色为主颜色的半透明版本（保留RGB，设置alpha为50%）
-                            val alpha = 0x80 // 50% 透明度
-                            val red = (color shr 16) and 0xFF
-                            val green = (color shr 8) and 0xFF
-                            val blue = color and 0xFF
-                            currentSecondaryColor = (alpha shl 24) or (red shl 16) or (green shl 8) or blue
-                            lyricTextView2.setTextColor(currentSecondaryColor)
-                            // 保存颜色设置
-                            DesktopLyricSettings.saveSettings(this@DesktopLyricService, 
-                                DesktopLyricSettings(fontSize = currentFontSize, textColor = color, 
-                                    highlightColor = currentSecondaryColor,
-                                    positionX = currentX, positionY = currentY,
-                                    enabled = isLocked))
-                            Log.d(TAG, "Color changed to: ${Integer.toHexString(color)}")
-                        }
-                    })
-                }
-                
-                addView(colorLayout)
-            }
-            addView(colorScrollView)
-            
-            // 字号调节
-            addView(LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                
-                addView(TextView(context).apply {
-                    text = "字号: ${currentFontSize.toInt()}sp"
-                    textSize = 14f
-                    setTextColor(Color.WHITE)
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply {
-                        bottomMargin = dpToPx(8)
-                    }
-                })
-                
-                addView(SeekBar(context).apply {
-                    max = 30
-                    progress = (currentFontSize - 12).toInt()
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply {
-                        bottomMargin = dpToPx(12)
-                    }
-                    setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                        override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                            currentFontSize = (12 + progress).toFloat()
-                            lyricTextView.textSize = currentFontSize
-                            lyricTextView2.textSize = currentFontSize * 0.7f
-                            ((parent as LinearLayout).getChildAt(0) as TextView).text = "字号: ${currentFontSize.toInt()}sp"
-                        }
-                        
-                        override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-                        
-                        override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                            DesktopLyricSettings.saveSettings(this@DesktopLyricService,
-                                DesktopLyricSettings(fontSize = currentFontSize, textColor = currentTextColor,
-                                    highlightColor = currentSecondaryColor,
-                                    positionX = currentX, positionY = currentY,
-                                    enabled = isLocked))
-                        }
-                    })
-                })
-            })
-            
-            // 锁定开关
-            addView(LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                
-                addView(TextView(context).apply {
-                    text = "锁定位置"
-                    textSize = 14f
-                    setTextColor(Color.WHITE)
-                    layoutParams = LinearLayout.LayoutParams(
-                        0,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        1f
-                    )
-                })
-                
-                addView(ToggleButton(context).apply {
-                    isChecked = isLocked
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    )
-                    setOnCheckedChangeListener { _, isChecked ->
-                        isLocked = isChecked
-                        // 保存锁定状态
-                        DesktopLyricSettings.saveSettings(this@DesktopLyricService,
-                            DesktopLyricSettings(fontSize = currentFontSize, textColor = currentTextColor,
-                                highlightColor = currentSecondaryColor, positionX = this@DesktopLyricService.layoutParams.x,
-                                positionY = this@DesktopLyricService.layoutParams.y, enabled = isLocked))
-                        Log.d(TAG, "showSettingsPopup: Lock state changed to $isLocked, settings saved")
-                    }
-                })
-            })
+    private fun showSettings() {
+        if (settingsComposeView != null) {
+            hideSettings()
+            return
         }
         
-        settingsPopup = PopupWindow(
-            settingsLayout,
-            dpToPx(280),
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            true
-        ).apply {
-            isOutsideTouchable = true
-            setOnDismissListener {
-                settingsPopup = null
-            }
-        }
-        
-        // 显示弹窗
         try {
-            settingsPopup?.showAtLocation(lyricLayout, Gravity.NO_GRAVITY, x - dpToPx(140), y - dpToPx(80))
-            Log.d(TAG, "showSettingsPopup: Popup shown successfully")
+            layoutParams.flags = layoutParams.flags or
+                    (WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
+            windowManager.updateViewLayout(rootLayout, layoutParams)
+
+            val composeView = ComposeView(this)
+            
+            composeView.setContent {
+                JianYinTheme {
+                    LyricSettingsPopupContent(
+                        onDismiss = { hideSettings() }
+                    )
+                }
+            }
+            
+            val composeParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dpToPx(8)
+            }
+            composeView.layoutParams = composeParams
+            
+            lyricLayout.addView(composeView)
+            settingsComposeView = composeView
+            
+            Log.d(TAG, "showSettings: Settings popup shown")
         } catch (e: Exception) {
-            Log.e(TAG, "showSettingsPopup: Error showing popup", e)
+            Log.e(TAG, "showSettings: Error showing settings popup", e)
+        }
+    }
+
+    private fun hideSettings() {
+        settingsComposeView?.let {
+            try {
+                lyricLayout.removeView(it)
+            } catch (e: Exception) {
+                Log.e(TAG, "hideSettings: Error removing popup", e)
+            }
+        }
+        settingsComposeView = null
+
+        try {
+            layoutParams.flags = layoutParams.flags and
+                    (WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH).inv()
+            windowManager.updateViewLayout(rootLayout, layoutParams)
+        } catch (e: Exception) {
+            Log.e(TAG, "hideSettings: Error updating flags", e)
+        }
+    }
+
+    @Composable
+    private fun LyricSettingsPopupContent(onDismiss: () -> Unit) {
+        val context = LocalContext.current
+        val settings = remember { DesktopLyricSettings.getSettings(context) }
+
+        var fontSize by remember { mutableStateOf(settings.fontSize) }
+        var textColor by remember { mutableStateOf(settings.textColor) }
+        var locked by remember { mutableStateOf(settings.enabled) }
+
+        val colorScheme = MaterialTheme.colorScheme
+
+        val presetColors = remember {
+            listOf(
+                Color.WHITE,
+                Color.parseColor("#E0E0E0"),
+                Color.RED,
+                Color.parseColor("#FF5722"),
+                Color.parseColor("#FF9800"),
+                Color.YELLOW,
+                Color.GREEN,
+                Color.parseColor("#4CAF50"),
+                Color.BLUE,
+                Color.parseColor("#2196F3"),
+                Color.parseColor("#9C27B0"),
+                Color.parseColor("#E91E63"),
+                Color.parseColor("#FFD700"),
+                Color.parseColor("#FF69B4"),
+                Color.parseColor("#00BCD4")
+            )
+        }
+
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = colorScheme.surfaceContainerHigh,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 300.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp)
+            ) {
+                Text(
+                    text = "歌词设置",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = colorScheme.primary
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(presetColors) { color ->
+                        val selected = textColor == color
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(androidx.compose.ui.graphics.Color(color))
+                                .then(
+                                    if (selected) Modifier.border(
+                                        1.dp,
+                                        colorScheme.onSurface,
+                                        CircleShape
+                                    ) else Modifier
+                                )
+                                .clickable {
+                                    textColor = color
+                                    DesktopLyricService.updateTextColor(color)
+                                    DesktopLyricSettings.saveSettings(context,
+                                        DesktopLyricSettings(
+                                            fontSize = fontSize,
+                                            textColor = color,
+                                            highlightColor = (0x80 shl 24) or ((color shr 16) and 0xFF shl 16) or ((color shr 8) and 0xFF shl 8) or (color and 0xFF),
+                                            positionX = settings.positionX,
+                                            positionY = settings.positionY,
+                                            enabled = locked
+                                        )
+                                    )
+                                }
+                        )
+                    }
+                    item {
+                        val accentColorInt = Color.argb(
+                            (colorScheme.primary.alpha * 255).toInt(),
+                            (colorScheme.primary.red * 255).toInt(),
+                            (colorScheme.primary.green * 255).toInt(),
+                            (colorScheme.primary.blue * 255).toInt()
+                        )
+                        val selected = textColor == accentColorInt
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(colorScheme.primary)
+                                .then(
+                                    if (selected) Modifier.border(
+                                        1.dp,
+                                        colorScheme.onSurface,
+                                        CircleShape
+                                    ) else Modifier
+                                )
+                                .clickable {
+                                    textColor = accentColorInt
+                                    DesktopLyricService.updateTextColor(accentColorInt)
+                                    DesktopLyricSettings.saveSettings(context,
+                                        DesktopLyricSettings(
+                                            fontSize = fontSize,
+                                            textColor = accentColorInt,
+                                            highlightColor = (0x80 shl 24) or ((accentColorInt shr 16) and 0xFF shl 16) or ((accentColorInt shr 8) and 0xFF shl 8) or (accentColorInt and 0xFF),
+                                            positionX = settings.positionX,
+                                            positionY = settings.positionY,
+                                            enabled = locked
+                                        )
+                                    )
+                                }
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                Text(
+                    text = "字号: ${fontSize.toInt()}sp",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colorScheme.onSurface
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                Slider(
+                    value = fontSize,
+                    onValueChange = {
+                        fontSize = it
+                        DesktopLyricService.updateFontSize(it)
+                    },
+                    onValueChangeFinished = {
+                        DesktopLyricSettings.saveSettings(context,
+                            DesktopLyricSettings(
+                                fontSize = fontSize,
+                                textColor = textColor,
+                                highlightColor = (0x80 shl 24) or ((textColor shr 16) and 0xFF shl 16) or ((textColor shr 8) and 0xFF shl 8) or (textColor and 0xFF),
+                                positionX = settings.positionX,
+                                positionY = settings.positionY,
+                                enabled = locked
+                            )
+                        )
+                    },
+                    valueRange = 12f..42f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "锁定位置",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = locked,
+                        onCheckedChange = {
+                            locked = it
+                            DesktopLyricService.updateLockState(it)
+                            DesktopLyricSettings.saveSettings(context,
+                                DesktopLyricSettings(
+                                    fontSize = fontSize,
+                                    textColor = textColor,
+                                    highlightColor = (0x80 shl 24) or ((textColor shr 16) and 0xFF shl 16) or ((textColor shr 8) and 0xFF shl 8) or (textColor and 0xFF),
+                                    positionX = settings.positionX,
+                                    positionY = settings.positionY,
+                                    enabled = locked
+                                )
+                            )
+                        }
+                    )
+                }
+            }
         }
     }
 
     private fun updateLyricView() {
         Log.d(TAG, "updateLyricView: currentLineIndex=$currentLineIndex, lyrics.size=${currentLyrics.size}")
-        
+
+        lyricTextView.setTextColor(currentTextColor)
+        lyricTextView.textSize = currentFontSize
+
         if (currentLyrics.isEmpty()) {
             Log.d(TAG, "updateLyricView: No lyrics to display")
             lyricTextView.text = ""
-            lyricTextView2.text = ""
             return
         }
-        
-        // 获取当前歌词
+
         val currentLine = if (currentLineIndex >= 0 && currentLineIndex < currentLyrics.size) {
             currentLyrics[currentLineIndex]
         } else {
             Log.w(TAG, "updateLyricView: Invalid line index $currentLineIndex")
             return
         }
-        
-        // 如果歌词相同，不更新
+
         if (currentLine.text == displayedLyric) {
             Log.d(TAG, "updateLyricView: Same lyric, skipping update")
             return
         }
-        
+
         Log.d(TAG, "updateLyricView: Displaying lyric: '${currentLine.text}'")
-        
-        // 保存上一句歌词用于淡出效果
-        if (displayedLyric.isNotEmpty()) {
-            displayedLyric2 = displayedLyric
-            lyricTextView2.text = displayedLyric2
-            lyricTextView2.alpha = 0.5f
-            
-            // 淡出动画
-            fadeJob?.cancel()
-            fadeJob = CoroutineScope(Dispatchers.Main).launch {
-                for (i in 0..20) {
-                    lyricTextView2.alpha = 0.5f - (i * 0.025f)
-                    delay(20)
-                }
-                displayedLyric2 = ""
-                lyricTextView2.text = ""
-            }
-        }
-        
-        // 更新当前歌词
+
         displayedLyric = currentLine.text
         lyricTextView.text = displayedLyric
     }
@@ -587,11 +652,16 @@ class DesktopLyricService : Service() {
     override fun onDestroy() {
         Log.d(TAG, "onDestroy: DesktopLyricService destroying")
         instance = null
-        fadeJob?.cancel()
-        settingsPopup?.dismiss()
+        
+        hideSettings()
+        
+        settingsLifecycleOwner?.dispatchEvent(Lifecycle.Event.ON_PAUSE)
+        settingsLifecycleOwner?.dispatchEvent(Lifecycle.Event.ON_STOP)
+        settingsLifecycleOwner?.dispatchEvent(Lifecycle.Event.ON_DESTROY)
+        settingsLifecycleOwner = null
         
         try {
-            windowManager.removeView(lyricLayout)
+            windowManager.removeView(rootLayout)
             Log.d(TAG, "onDestroy: Window removed successfully")
         } catch (e: Exception) {
             Log.e(TAG, "onDestroy: Error removing window", e)
@@ -606,13 +676,10 @@ class DesktopLyricService : Service() {
     }
 }
 
-/**
- * 桌面歌词设置数据类
- */
 data class DesktopLyricSettings(
     @Dimension(unit = Dimension.SP) val fontSize: Float = 20f,
     @ColorInt val textColor: Int = Color.WHITE,
-    @ColorInt val highlightColor: Int = Color.parseColor("#80FFFFFF"),
+    @ColorInt val highlightColor: Int = 0x80FFFFFF.toInt(),
     val positionX: Int = 0,
     val positionY: Int = 200,
     val enabled: Boolean = false
@@ -632,12 +699,24 @@ data class DesktopLyricSettings(
             return prefs.getBoolean(KEY_SETTINGS_EXIST, false)
         }
         
+        private fun safeGetInt(prefs: SharedPreferences, key: String, default: Int): Int {
+            return try {
+                prefs.getInt(key, default)
+            } catch (e: ClassCastException) {
+                try {
+                    prefs.getString(key, null)?.toIntOrNull() ?: default
+                } catch (e2: ClassCastException) {
+                    default
+                }
+            }
+        }
+
         fun getSettings(context: Context): DesktopLyricSettings {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             return DesktopLyricSettings(
                 fontSize = prefs.getFloat(KEY_FONT_SIZE, 20f),
-                textColor = prefs.getInt(KEY_TEXT_COLOR, Color.WHITE),
-                highlightColor = prefs.getInt(KEY_HIGHLIGHT_COLOR, Color.parseColor("#80FFFFFF")),
+                textColor = safeGetInt(prefs, KEY_TEXT_COLOR, Color.WHITE),
+                highlightColor = safeGetInt(prefs, KEY_HIGHLIGHT_COLOR, 0x80FFFFFF.toInt()),
                 positionX = prefs.getInt(KEY_POSITION_X, 0),
                 positionY = prefs.getInt(KEY_POSITION_Y, 200),
                 enabled = prefs.getBoolean(KEY_ENABLED, false)
