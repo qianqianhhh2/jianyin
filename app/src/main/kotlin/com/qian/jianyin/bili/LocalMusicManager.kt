@@ -4,9 +4,12 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
+import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.util.Log
+import com.kyant.taglib.Picture
+import com.kyant.taglib.TagLib
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -117,7 +120,7 @@ class LocalMusicManager(private val context: Context) {
      */
     private fun parseMetadata(file: File): Song {
         try {
-            // 使用MediaMetadataRetriever解析元数据
+            // 使用MediaMetadataRetriever解析基本元数据（歌名、歌手）
             val retriever = android.media.MediaMetadataRetriever()
             retriever.setDataSource(file.absolutePath)
             
@@ -142,19 +145,92 @@ class LocalMusicManager(private val context: Context) {
                 }
             }
             
-            // 解析封面
-            var coverPath = ""
-            val art = retriever.embeddedPicture
-            if (art != null) {
-                // 将封面保存为临时文件
-                val coverFile = File(context.cacheDir, "${file.hashCode()}_cover.jpg")
-                coverFile.outputStream().use {
-                    it.write(art)
-                }
-                coverPath = coverFile.absolutePath
-            }
-            
             retriever.release()
+            
+            // 使用TagLib读取嵌入的封面和歌词（与DownloadManager保持一致）
+            var coverPath = ""
+            var lyrics: String? = null
+            
+            try {
+                val parcelFileDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+                
+                // 使用TagLib.getMetadata()获取完整元数据（与NeriPlayer一致）
+                val metadata = TagLib.getMetadata(parcelFileDescriptor.dup().detachFd(), true)
+                val propertyMap = metadata?.propertyMap
+                
+                // 调试日志：打印所有可用字段
+                if (propertyMap != null) {
+                    Log.d("LocalMusicManager", "propertyMap 包含 ${propertyMap.size} 个字段")
+                    propertyMap.forEach { (key, value) ->
+                        Log.d("LocalMusicManager", "字段: $key, 值长度: ${value.joinToString { it.length.toString() }}")
+                        // 检查是否有歌词相关字段
+                        if (key.equals("LYRICS", ignoreCase = true) || 
+                            key.equals("UNSYNCEDLYRICS", ignoreCase = true)) {
+                            val content = value.firstOrNull() ?: "null"
+                            Log.d("LocalMusicManager", "歌词字段 $key 的内容: '${content.take(50)}...'")
+                        }
+                    }
+                } else {
+                    Log.d("LocalMusicManager", "propertyMap 为 null")
+                }
+                
+                // 读取嵌入封面
+                val pictures = metadata?.pictures
+                if (pictures != null && pictures.isNotEmpty()) {
+                    val frontCover = pictures.firstOrNull { 
+                        it.pictureType.equals("Front Cover", ignoreCase = true) 
+                    } ?: pictures.first()
+                    val coverData = frontCover.data
+                    val coverFile = File(context.cacheDir, "${file.hashCode()}_cover.jpg")
+                    coverFile.writeBytes(coverData)
+                    coverPath = coverFile.absolutePath
+                    Log.d("LocalMusicManager", "使用TagLib读取封面成功: ${coverFile.absolutePath}")
+                }
+                
+                // 读取嵌入歌词（尝试多个可能的字段名，与NeriPlayer写入时保持一致，忽略大小写匹配）
+                if (propertyMap != null) {
+                    val lyricsFields = listOf("LYRICS", "UNSYNCEDLYRICS", "DESCRIPTION", "LYRIC", "USLT")
+                    val bomChar = '\uFEFF'
+                    val nulChar = '\u0000'
+                    for (field in lyricsFields) {
+                        // 忽略大小写查找字段（与NeriPlayer的readFirstValue一致）
+                        val entry = propertyMap.entries.firstOrNull { (key, _) -> 
+                            key.equals(field, ignoreCase = true) 
+                        }
+                        if (entry != null && entry.value.isNotEmpty()) {
+                            // 清理歌词内容：移除BOM字符、NUL字符和首尾空格
+                            val rawLyrics = entry.value[0]
+                            val cleanedLyrics = rawLyrics.replace(bomChar.toString(), "")
+                                .trim(nulChar, ' ')
+                                .takeIf { it.isNotBlank() }
+                            if (cleanedLyrics != null) {
+                                lyrics = cleanedLyrics
+                                Log.d("LocalMusicManager", "使用TagLib从 ${entry.key} 字段读取歌词成功，原始长度: ${rawLyrics.length}，清理后长度: ${lyrics.length}")
+                                break
+                            }
+                        }
+                    }
+                }
+                
+                parcelFileDescriptor.close()
+            } catch (tagLibEx: Exception) {
+                Log.e("LocalMusicManager", "TagLib读取失败: ${tagLibEx.message}")
+                // TagLib失败时尝试使用MediaMetadataRetriever读取封面作为备选
+                try {
+                    val retrieverAlt = android.media.MediaMetadataRetriever()
+                    retrieverAlt.setDataSource(file.absolutePath)
+                    val art = retrieverAlt.embeddedPicture
+                    if (art != null) {
+                        val coverFile = File(context.cacheDir, "${file.hashCode()}_cover.jpg")
+                        coverFile.outputStream().use { it.write(art) }
+                        coverPath = coverFile.absolutePath
+                        Log.d("LocalMusicManager", "使用MediaMetadataRetriever读取封面成功")
+                    }
+                    retrieverAlt.release()
+                } catch (e: Exception) {
+                    Log.e("LocalMusicManager", "MediaMetadataRetriever读取封面也失败: ${e.message}")
+                }
+            }
             
             // 创建并返回歌曲对象
             return Song(
@@ -163,7 +239,7 @@ class LocalMusicManager(private val context: Context) {
                 artist = songArtist,
                 url = file.absolutePath,
                 pic = coverPath,
-                lrc = null,
+                lrc = lyrics,
                 isLocal = true
             )
         } catch (e: Exception) {
@@ -180,13 +256,64 @@ class LocalMusicManager(private val context: Context) {
                 songName = parts.drop(1).joinToString(" - ").trim()
             }
             
+            // 尝试使用TagLib读取嵌入的封面和歌词
+            var coverPath = ""
+            var lyrics: String? = null
+            try {
+                val parcelFileDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+                
+                // 使用TagLib.getMetadata()获取完整元数据
+                val metadata = TagLib.getMetadata(parcelFileDescriptor.dup().detachFd(), true)
+                val propertyMap = metadata?.propertyMap
+                
+                // 读取嵌入封面
+                val pictures = metadata?.pictures
+                if (pictures != null && pictures.isNotEmpty()) {
+                    val frontCover = pictures.firstOrNull { 
+                        it.pictureType.equals("Front Cover", ignoreCase = true) 
+                    } ?: pictures.first()
+                    val coverData = frontCover.data
+                    val coverFile = File(context.cacheDir, "${file.hashCode()}_cover.jpg")
+                    coverFile.writeBytes(coverData)
+                    coverPath = coverFile.absolutePath
+                }
+                
+                // 读取嵌入歌词（尝试多个可能的字段名，忽略大小写匹配）
+                if (propertyMap != null) {
+                    val lyricsFields = listOf("LYRICS", "UNSYNCEDLYRICS", "DESCRIPTION", "LYRIC", "USLT")
+                    val bomChar = '\uFEFF'
+                    val nulChar = '\u0000'
+                    for (field in lyricsFields) {
+                        // 忽略大小写查找字段
+                        val entry = propertyMap.entries.firstOrNull { (key, _) -> 
+                            key.equals(field, ignoreCase = true) 
+                        }
+                        if (entry != null && entry.value.isNotEmpty()) {
+                            // 清理歌词内容：移除BOM字符、NUL字符和首尾空格
+                            val rawLyrics = entry.value[0]
+                            val cleanedLyrics = rawLyrics.replace(bomChar.toString(), "")
+                                .trim(nulChar, ' ')
+                                .takeIf { it.isNotBlank() }
+                            if (cleanedLyrics != null) {
+                                lyrics = cleanedLyrics
+                                break
+                            }
+                        }
+                    }
+                }
+                
+                parcelFileDescriptor.close()
+            } catch (tagLibEx: Exception) {
+                Log.e("LocalMusicManager", "异常分支中TagLib读取失败: ${tagLibEx.message}")
+            }
+            
             return Song(
                 id = "local_${file.hashCode()}",
                 name = songName,
                 artist = songArtist,
                 url = file.absolutePath,
-                pic = "",
-                lrc = null, 
+                pic = coverPath,
+                lrc = lyrics, 
                 isLocal = true
             )
         }
@@ -203,8 +330,52 @@ class LocalMusicManager(private val context: Context) {
             Log.i("LocalMusicManager", "文件路径: ${file.absolutePath}")
             Log.i("LocalMusicManager", "文件扩展名: ${file.extension}")
             
-            // 使用 jaudiotagger 库提取歌词
-            Log.i("LocalMusicManager", "尝试使用 jaudiotagger 库提取内嵌歌词")
+            // 优先使用 TagLib 读取（与 DownloadManager 写入时保持一致）
+            Log.i("LocalMusicManager", "优先使用 TagLib 提取内嵌歌词")
+            try {
+                val parcelFileDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+                val metadata = TagLib.getMetadata(parcelFileDescriptor.dup().detachFd(), true)
+                val propertyMap = metadata?.propertyMap
+                
+                if (propertyMap != null) {
+                    Log.i("LocalMusicManager", "TagLib 读取到 ${propertyMap.size} 个字段")
+                    // 尝试多个可能的字段名（与 DownloadManager 写入时一致）
+                    val lyricsFields = listOf("LYRICS", "UNSYNCEDLYRICS", "DESCRIPTION", "LYRIC", "USLT")
+                    val bomChar = '\uFEFF'
+                    val nulChar = '\u0000'
+                    
+                    for (field in lyricsFields) {
+                        // 忽略大小写查找字段
+                        val entry = propertyMap.entries.firstOrNull { (key, _) -> 
+                            key.equals(field, ignoreCase = true) 
+                        }
+                        if (entry != null && entry.value.isNotEmpty()) {
+                            val rawLyrics = entry.value[0]
+                            // 清理歌词内容
+                            val cleanedLyrics = rawLyrics.replace(bomChar.toString(), "")
+                                .trim(nulChar, ' ')
+                                .takeIf { it.isNotBlank() }
+                            if (cleanedLyrics != null && cleanedLyrics.length > 20) {
+                                Log.i("LocalMusicManager", "TagLib 从 ${entry.key} 字段提取歌词成功，长度: ${cleanedLyrics.length}")
+                                Log.i("LocalMusicManager", "歌词预览: ${cleanedLyrics.take(100)}...")
+                                parcelFileDescriptor.close()
+                                return cleanedLyrics
+                            } else if (cleanedLyrics != null) {
+                                Log.i("LocalMusicManager", "TagLib 找到 ${entry.key} 字段但内容过短: ${cleanedLyrics.length} 字符")
+                            }
+                        }
+                    }
+                    Log.i("LocalMusicManager", "TagLib 未找到有效歌词字段")
+                } else {
+                    Log.i("LocalMusicManager", "TagLib 读取 propertyMap 为空")
+                }
+                parcelFileDescriptor.close()
+            } catch (tagLibEx: Exception) {
+                Log.e("LocalMusicManager", "TagLib 提取歌词失败: ${tagLibEx.message}")
+            }
+            
+            // TagLib 失败时，回退使用 jaudiotagger 库提取歌词
+            Log.i("LocalMusicManager", "TagLib 未找到歌词，尝试使用 jaudiotagger 库")
             try {
                 Log.i("LocalMusicManager", "开始读取音频文件")
                 val audioFile = org.jaudiotagger.audio.AudioFileIO.read(file)
