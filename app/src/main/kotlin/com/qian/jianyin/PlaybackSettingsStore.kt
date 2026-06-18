@@ -10,6 +10,8 @@ object PlaybackSettingsStore {
     private const val PREFS_NAME = "playback_settings"
     private const val KEY_LYRIC_FONT_SIZE = "lyric_font_size" // 歌词字体大小 (sp)
     private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"   // 屏幕常亮
+    private const val KEY_GRADIENT_BRIGHTNESS = "gradient_brightness" // 大播放器渐变层亮度 (0.0-1.0)
+    private const val KEY_AUTO_DARKEN_COVER = "auto_darken_cover" // 自动压暗封面
 
     // ========== 歌词字体大小设置 ==========
 
@@ -54,6 +56,57 @@ object PlaybackSettingsStore {
     fun setKeepScreenOnEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_KEEP_SCREEN_ON, enabled)
+            .apply()
+    }
+
+    // ========== 大播放器渐变层亮度设置 ==========
+
+    // 默认渐变层透明度值（基准值）
+    const val DEFAULT_GRADIENT_TOP_ALPHA = 0.5f
+    const val DEFAULT_GRADIENT_MIDDLE_ALPHA = 0.1f
+    const val DEFAULT_GRADIENT_BOTTOM_ALPHA = 0.9f
+
+    /**
+     * 获取大播放器渐变层亮度调整系数
+     * @param context 上下文
+     * @return 亮度调整系数（0.1-2.0），默认 1.0（原始亮度）
+     */
+    fun getGradientBrightnessMultiplier(context: Context): Float {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getFloat(KEY_GRADIENT_BRIGHTNESS, 1.0f)
+    }
+
+    /**
+     * 设置大播放器渐变层亮度调整系数
+     * @param context 上下文
+     * @param multiplier 亮度调整系数（0.1-2.0），1.0为原始亮度
+     */
+    fun setGradientBrightnessMultiplier(context: Context, multiplier: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putFloat(KEY_GRADIENT_BRIGHTNESS, multiplier.coerceIn(0.1f, 2.0f))
+            .apply()
+    }
+
+    // ========== 自动压暗封面设置 ==========
+
+    /**
+     * 获取自动压暗封面设置
+     * @param context 上下文
+     * @return 是否开启自动压暗封面，默认 true
+     */
+    fun isAutoDarkenCoverEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AUTO_DARKEN_COVER, true)
+    }
+
+    /**
+     * 设置自动压暗封面
+     * @param context 上下文
+     * @param enabled 是否开启
+     */
+    fun setAutoDarkenCoverEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_AUTO_DARKEN_COVER, enabled)
             .apply()
     }
 }

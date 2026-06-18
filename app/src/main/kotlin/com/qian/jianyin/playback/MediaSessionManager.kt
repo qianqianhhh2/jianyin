@@ -100,9 +100,24 @@ class MediaSessionManager private constructor(context: Context) {
     private var isPlaying = false
     
     /**
+     * 是否已初始化
+     */
+    private var isInitialized = false
+    
+    /**
      * 当前媒体元数据
      */
     private var currentMetadata: MediaMetadataCompat? = null
+    
+    /**
+     * 当前歌曲ID，用于防抖
+     */
+    private var currentSongId: String = ""
+    
+    /**
+     * 是否正在更新通知（防抖）
+     */
+    private var isUpdatingNotification = false
     
     /**
      * 最新播放位置
@@ -166,6 +181,12 @@ class MediaSessionManager private constructor(context: Context) {
      * 设置回调处理系统控制命令，并激活会话。
      */
     fun initialize() {
+        // 防止重复初始化
+        if (isInitialized) {
+            Log.d("MediaSession", "媒体会话已初始化，跳过重复初始化")
+            return
+        }
+        
         Log.d("MediaSession", "开始初始化媒体会话")
         
         // 1. 创建通知渠道 (Android 8.0+ 必需)
@@ -269,6 +290,9 @@ class MediaSessionManager private constructor(context: Context) {
             isActive = true
             Log.d("MediaSession", "MediaSession 已激活，controlCallback: ${controlCallback != null}")
         }
+        
+        // 标记初始化完成
+        isInitialized = true
     }
     
     /**
@@ -353,6 +377,18 @@ class MediaSessionManager private constructor(context: Context) {
         duration: Long = 0L,
         artworkUrl: String? = null
     ) {
+        // 生成唯一歌曲ID用于防抖
+        val newSongId = "$title|$artist"
+        
+        // 如果歌曲没有变化，跳过更新（防抖）
+        if (currentSongId == newSongId && duration == 0L) {
+            Log.d("MediaSession", "歌曲未变化，跳过元数据更新: $title")
+            return
+        }
+        
+        // 更新当前歌曲ID
+        currentSongId = newSongId
+        
         // 总是创建新的元数据构建器，避免保留旧的封面信息
         val metadataBuilder = MediaMetadataCompat.Builder()
             .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
@@ -397,7 +433,8 @@ class MediaSessionManager private constructor(context: Context) {
                 mediaSession?.setMetadata(updatedMetadata)
                 currentMetadata = updatedMetadata
                 
-                if (isPlaying) {
+                // 只有在播放状态且当前没有正在更新通知时才显示
+                if (isPlaying && !isUpdatingNotification) {
                     showNotification(artworkBitmap = it)
                 }
             }
@@ -430,8 +467,8 @@ class MediaSessionManager private constructor(context: Context) {
                             mediaSession?.setMetadata(updatedMetadata)
                             currentMetadata = updatedMetadata
                             
-                            // 只在播放状态且通知需要更新时才显示
-                            if (isPlaying) {
+                            // 只在播放状态且当前没有正在更新通知时才显示
+                            if (isPlaying && !isUpdatingNotification) {
                                 Log.d("MediaSession", "更新通知封面")
                                 showNotification(artworkBitmap = bitmap)
                             }
@@ -441,7 +478,7 @@ class MediaSessionManager private constructor(context: Context) {
                     Log.d("MediaSession", "封面加载失败，bitmap为null")
                     // 加载失败时也要确保通知显示（无封面）
                     withContext(Dispatchers.Main) {
-                        if (isPlaying) {
+                        if (isPlaying && !isUpdatingNotification) {
                             showNotification()
                         }
                     }
@@ -451,7 +488,7 @@ class MediaSessionManager private constructor(context: Context) {
                 e.printStackTrace()
                 // 异常时也要确保通知显示（无封面）
                 withContext(Dispatchers.Main) {
-                    if (isPlaying) {
+                    if (isPlaying && !isUpdatingNotification) {
                         showNotification()
                     }
                 }
@@ -563,79 +600,93 @@ class MediaSessionManager private constructor(context: Context) {
      * @param artworkBitmap 封面图片 Bitmap，可选
      */
     fun showNotification(artworkBitmap: Bitmap? = null) {
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        // 防抖：如果正在更新通知，跳过此次调用
+        if (isUpdatingNotification) {
+            Log.d("MediaSession", "通知正在更新中，跳过此次调用")
+            return
         }
-        val contentIntent = PendingIntent.getActivity(
-            context,
-            0,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
         
-        // 创建媒体样式通知
-        val mediaStyle = MediaNotificationCompat.MediaStyle()
-            .setMediaSession(mediaSession?.sessionToken) // 关键：绑定到媒体会话
-            .setShowActionsInCompactView(0, 1, 2) // 在折叠视图中显示的动作索引
-            .setShowCancelButton(false) // 不显示取消按钮，避免与前台服务冲突
+        // 标记正在更新通知
+        isUpdatingNotification = true
         
-        // 获取当前元数据
-        val title = currentMetadata?.getString(MediaMetadataCompat.METADATA_KEY_TITLE) ?: "简音"
-        val artist = currentMetadata?.getString(MediaMetadataCompat.METADATA_KEY_ARTIST) ?: "未知歌手"
-        val duration = currentMetadata?.getLong(MediaMetadataCompat.METADATA_KEY_DURATION) ?: 0L
-        
-        // 优先使用传入的封面，其次从元数据中获取
-        val finalArtworkBitmap = artworkBitmap ?: currentMetadata?.getBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART)
-        
-        // 构建通知
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play) // 使用系统图标或您的应用图标
-            .setContentTitle(title)
-            .setContentText(artist)
-            .setLargeIcon(finalArtworkBitmap)
-            .setContentIntent(contentIntent)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setStyle(mediaStyle) // 使用 MediaStyle
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true) // 保持通知常驻
-            .setOnlyAlertOnce(true)
-            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
-            .setDeleteIntent(
-                buildMediaButtonPendingIntent(ACTION_STOP)
-            )
-    
-        // ✅ 关键修复：添加进度条
-        if (duration > 0) {
-            val playbackState = mediaSession?.controller?.playbackState
-            val currentPosition = playbackState?.position ?: 0L
-            
-            notification.setProgress(
-                duration.toInt(), 
-                currentPosition.toInt(), 
-                false  // false 表示确定的进度，true 表示不确定的进度
+        try {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+            val contentIntent = PendingIntent.getActivity(
+                context,
+                0,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             
-            // 显示进度文本
-            val formatTime = { ms: Long ->
-                val totalSeconds = ms / 1000
-                val minutes = totalSeconds / 60
-                val seconds = totalSeconds % 60
-                String.format("%d:%02d", minutes, seconds)
+            // 创建媒体样式通知
+            val mediaStyle = MediaNotificationCompat.MediaStyle()
+                .setMediaSession(mediaSession?.sessionToken) // 关键：绑定到媒体会话
+                .setShowActionsInCompactView(0, 1, 2) // 在折叠视图中显示的动作索引
+                .setShowCancelButton(false) // 不显示取消按钮，避免与前台服务冲突
+            
+            // 获取当前元数据
+            val title = currentMetadata?.getString(MediaMetadataCompat.METADATA_KEY_TITLE) ?: "简音"
+            val artist = currentMetadata?.getString(MediaMetadataCompat.METADATA_KEY_ARTIST) ?: "未知歌手"
+            val duration = currentMetadata?.getLong(MediaMetadataCompat.METADATA_KEY_DURATION) ?: 0L
+            
+            // 优先使用传入的封面，其次从元数据中获取
+            val finalArtworkBitmap = artworkBitmap ?: currentMetadata?.getBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART)
+            
+            // 构建通知
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_media_play) // 使用系统图标或您的应用图标
+                .setContentTitle(title)
+                .setContentText(artist)
+                .setLargeIcon(finalArtworkBitmap)
+                .setContentIntent(contentIntent)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setStyle(mediaStyle) // 使用 MediaStyle
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setOngoing(true) // 保持通知常驻
+                .setOnlyAlertOnce(true)
+                .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+                .setDeleteIntent(
+                    buildMediaButtonPendingIntent(ACTION_STOP)
+                )
+        
+            // ✅ 关键修复：添加进度条
+            if (duration > 0) {
+                val playbackState = mediaSession?.controller?.playbackState
+                val currentPosition = playbackState?.position ?: 0L
+                
+                notification.setProgress(
+                    duration.toInt(), 
+                    currentPosition.toInt(), 
+                    false  // false 表示确定的进度，true 表示不确定的进度
+                )
+                
+                // 显示进度文本
+                val formatTime = { ms: Long ->
+                    val totalSeconds = ms / 1000
+                    val minutes = totalSeconds / 60
+                    val seconds = totalSeconds % 60
+                    String.format("%d:%02d", minutes, seconds)
+                }
+                
+                notification.setSubText("${formatTime(currentPosition)} / ${formatTime(duration)}")
             }
             
-            notification.setSubText("${formatTime(currentPosition)} / ${formatTime(duration)}")
+            // 添加控制按钮
+            addNotificationActions(notification)
+            
+            // 显示通知，使用相同的通知 ID 确保与前台服务通知更新而不是替换
+            val notificationObj = notification.build()
+            notificationManager.notify(NOTIFICATION_ID, notificationObj)
+            
+            // 服务已经在 onCreate 中启动了前台模式，这里只需要更新通知
+            
+            Log.d("MediaSession", "显示通知: $title - $artist")
+        } finally {
+            // 重置更新状态
+            isUpdatingNotification = false
         }
-        
-        // 添加控制按钮
-        addNotificationActions(notification)
-        
-        // 显示通知，使用相同的通知 ID 确保与前台服务通知更新而不是替换
-        val notificationObj = notification.build()
-        notificationManager.notify(NOTIFICATION_ID, notificationObj)
-        
-        // 服务已经在 onCreate 中启动了前台模式，这里只需要更新通知
-        
-        Log.d("MediaSession", "显示通知: $title - $artist")
     }
     
     /**

@@ -1,5 +1,6 @@
 package com.qian.jianyin
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -66,6 +67,7 @@ import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import com.qian.jianyin.bili.BiliWebLoginHelper
 import com.qian.jianyin.bili.BiliApi
 import com.qian.jianyin.netease.api.NeteaseApiService
@@ -207,6 +209,21 @@ fun MyMusicScreenV2(
         )
     }
 
+    // 自动压暗封面设置相关状态
+    var autoDarkenCoverEnabled by remember {
+        mutableStateOf(
+            PlaybackSettingsStore.isAutoDarkenCoverEnabled(context)
+        )
+    }
+
+    // 渐变层亮度设置相关状态
+    var showGradientBrightnessDialog by remember { mutableStateOf(false) }
+    var gradientBrightnessMultiplier by remember {
+        mutableStateOf(
+            PlaybackSettingsStore.getGradientBrightnessMultiplier(context)
+        )
+    }
+
     // 歌曲淡入淡出设置
     var fadeEnabled by remember {
         mutableStateOf(
@@ -246,6 +263,7 @@ fun MyMusicScreenV2(
     var showNeteaseLogoutDialog by remember { mutableStateOf(false) }
     var showBiliLogoutDialog by remember { mutableStateOf(false) }
     var showAccountExpand by remember { mutableStateOf(false) }
+    var showPlayerExpand by remember { mutableStateOf(false) }
     var keepPlaylistOnExitEnabled by remember {
         mutableStateOf(
             DownloadSettingsStore.isKeepPlaylistOnExitEnabled(context)
@@ -2927,8 +2945,7 @@ fun MyMusicScreenV2(
                     SettingsItem("下载位置设置", Icons.Default.Folder, "设置下载文件保存路径", "folder"),
                     SettingsItem("音质设置", Icons.Default.MusicNote, "下载和播放音质选项", "quality"),
                     SettingsItem("本地音乐歌词来源", Icons.Default.LibraryMusic, if (selectedLyricSource == 0) "内嵌" else "网络", "lyric"),
-                    SettingsItem("歌词字体大小", Icons.Default.FormatSize, "${lyricFontSize.toInt()}sp", "lyric_font_size"),
-                    SettingsItem("屏幕常亮", Icons.Default.Visibility, "仅全屏播放器生效", "keep_screen_on"),
+                    SettingsItem("全屏播放器设置", Icons.Default.Fullscreen, "歌词字体、亮度、屏幕常亮等", "player"),
                     SettingsItem("歌曲淡入淡出", Icons.Default.GraphicEq, "播放暂停时音量渐变", "fade"),
                     SettingsItem("自动缓存", Icons.Default.Download, "根据歌曲播放次数，自动缓存歌曲", "auto_cache"),
                     SettingsItem("默认音乐打开方式", Icons.Default.Apps, "将本应用设为默认音乐播放器", "default_opener"),
@@ -3107,6 +3124,91 @@ fun MyMusicScreenV2(
                                             HorizontalDivider(color = colorScheme.surfaceVariant.copy(alpha = 0.3f))
                                         }
                                     }
+                                } else if (item.id == "player") {
+                                    // 可展开的全屏播放器设置分组
+                                    ListItem(
+                                        headlineContent = { Text(item.title) },
+                                        supportingContent = { Text(item.subtitle, color = colorScheme.onSurfaceVariant) },
+                                        leadingContent = {
+                                            Icon(item.icon, null, tint = colorScheme.onSurfaceVariant)
+                                        },
+                                        trailingContent = {
+                                            Icon(
+                                                if (showPlayerExpand) Icons.Default.ExpandMore else Icons.Default.ChevronRight,
+                                                null,
+                                                tint = colorScheme.onSurfaceVariant
+                                            )
+                                        },
+                                        modifier = Modifier.clickable { showPlayerExpand = !showPlayerExpand }
+                                    )
+                                    HorizontalDivider(color = colorScheme.surfaceVariant.copy(alpha = 0.3f))
+
+                                    AnimatedVisibility(visible = showPlayerExpand) {
+                                        Column {
+                                            // 歌词字体大小
+                                            ListItem(
+                                                headlineContent = { Text("歌词字体大小") },
+                                                supportingContent = { Text("${lyricFontSize.toInt()}sp", color = colorScheme.onSurfaceVariant) },
+                                                leadingContent = {
+                                                    Icon(Icons.Default.FormatSize, null, tint = colorScheme.onSurfaceVariant)
+                                                },
+                                                modifier = Modifier.clickable {
+                                                    lyricFontSize = PlaybackSettingsStore.getLyricFontSize(context)
+                                                    showLyricFontSizeDialog = true
+                                                }
+                                            )
+                                            HorizontalDivider(color = colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                            // 渐变层亮度
+                                            ListItem(
+                                                headlineContent = { Text("渐变层亮度") },
+                                                supportingContent = { Text("${(gradientBrightnessMultiplier * 100).toInt()}%", color = colorScheme.onSurfaceVariant) },
+                                                leadingContent = {
+                                                    Icon(Icons.Default.BrightnessAuto, null, tint = colorScheme.onSurfaceVariant)
+                                                },
+                                                modifier = Modifier.clickable {
+                                                    gradientBrightnessMultiplier = PlaybackSettingsStore.getGradientBrightnessMultiplier(context)
+                                                    showGradientBrightnessDialog = true
+                                                }
+                                            )
+                                            HorizontalDivider(color = colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                            // 屏幕常亮
+                                            ListItem(
+                                                headlineContent = { Text("屏幕常亮") },
+                                                supportingContent = { Text("仅全屏播放器生效", color = colorScheme.onSurfaceVariant) },
+                                                leadingContent = {
+                                                    Icon(Icons.Default.Visibility, null, tint = colorScheme.onSurfaceVariant)
+                                                },
+                                                trailingContent = {
+                                                    Switch(
+                                                        checked = keepScreenOnEnabled,
+                                                        onCheckedChange = { enabled ->
+                                                            keepScreenOnEnabled = enabled
+                                                            PlaybackSettingsStore.setKeepScreenOnEnabled(context, enabled)
+                                                        }
+                                                    )
+                                                }
+                                            )
+                                            HorizontalDivider(color = colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                            // 自动压暗封面
+                                            ListItem(
+                                                headlineContent = { Text("自动压暗") },
+                                                supportingContent = { Text("当封面过亮时自动变暗，提升可视度", color = colorScheme.onSurfaceVariant) },
+                                                leadingContent = {
+                                                    Icon(Icons.Default.BrightnessLow, null, tint = colorScheme.onSurfaceVariant)
+                                                },
+                                                trailingContent = {
+                                                    Switch(
+                                                        checked = autoDarkenCoverEnabled,
+                                                        onCheckedChange = { enabled ->
+                                                            autoDarkenCoverEnabled = enabled
+                                                            PlaybackSettingsStore.setAutoDarkenCoverEnabled(context, enabled)
+                                                        }
+                                                    )
+                                                }
+                                            )
+                                            HorizontalDivider(color = colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                        }
+                                    }
                                 } else {
                                 ListItem(
                                     headlineContent = { Text(item.title) },
@@ -3129,14 +3231,6 @@ fun MyMusicScreenV2(
                                                 onCheckedChange = { enabled ->
                                                     autoCacheEnabled = enabled
                                                     DownloadSettingsStore.setAutoCacheEnabled(context, enabled)
-                                                }
-                                            )
-                                        } else if (item.id == "keep_screen_on") {
-                                            Switch(
-                                                checked = keepScreenOnEnabled,
-                                                onCheckedChange = { enabled ->
-                                                    keepScreenOnEnabled = enabled
-                                                    PlaybackSettingsStore.setKeepScreenOnEnabled(context, enabled)
                                                 }
                                             )
                                         } else if (item.id == "default_opener") {
@@ -3164,10 +3258,6 @@ fun MyMusicScreenV2(
                                                 showAudioQualityScreen = true
                                             }
                                             "lyric" -> showLyricSourceDialog = true
-                                            "lyric_font_size" -> {
-                                                lyricFontSize = PlaybackSettingsStore.getLyricFontSize(context)
-                                                showLyricFontSizeDialog = true
-                                            }
                                             "dark" -> {
                                                 selectedDarkMode = DownloadSettingsStore.getDarkMode(context)
                                                 showDarkModeDialog = true
@@ -3501,6 +3591,17 @@ fun MyMusicScreenV2(
 
             // 歌词字体大小设置对话框
             if (showLyricFontSizeDialog) {
+                val tempFontSize = remember { mutableStateOf(lyricFontSize) }
+                val lastFontSizeValue = remember { mutableStateOf(tempFontSize.value) }
+                val vibrator = remember {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
+                    } else {
+                        @Suppress("DEPRECATION")
+                        context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                    }
+                }
+                
                 AlertDialog(
                     onDismissRequest = { showLyricFontSizeDialog = false },
                     title = { Text("歌词字体大小") },
@@ -3518,7 +3619,7 @@ fun MyMusicScreenV2(
                             ) {
                                 Text(
                                     text = "预览歌词文字",
-                                    fontSize = lyricFontSize.sp,
+                                    fontSize = tempFontSize.value.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = colorScheme.onBackground
                                 )
@@ -3532,8 +3633,23 @@ fun MyMusicScreenV2(
                             ) {
                                 Text("12sp", fontSize = 12.sp, color = colorScheme.onSurfaceVariant)
                                 Slider(
-                                    value = lyricFontSize,
-                                    onValueChange = { lyricFontSize = it },
+                                    value = tempFontSize.value,
+                                    onValueChange = { newValue ->
+                                        // 计算最近的档位值（每1sp一个档位）
+                                        val steppedValue = newValue.roundToInt().toFloat()
+                                        tempFontSize.value = steppedValue.coerceIn(12f, 32f)
+                                        
+                                        // 只在档位变化时触发微振动（模拟齿轮感）
+                                        if (tempFontSize.value != lastFontSizeValue.value) {
+                                            lastFontSizeValue.value = tempFontSize.value
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK))
+                                            } else {
+                                                @Suppress("DEPRECATION")
+                                                vibrator.vibrate(10)
+                                            }
+                                        }
+                                    },
                                     valueRange = 12f..32f,
                                     steps = 19, // 12到32共21个值，步长1，steps=19
                                     modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
@@ -3551,7 +3667,7 @@ fun MyMusicScreenV2(
                                 horizontalArrangement = Arrangement.Center
                             ) {
                                 Text(
-                                    "当前: ${lyricFontSize.toInt()}sp",
+                                    "当前: ${tempFontSize.value.toInt()}sp",
                                     fontSize = 14.sp,
                                     color = colorScheme.primary,
                                     fontWeight = FontWeight.Medium
@@ -3564,7 +3680,7 @@ fun MyMusicScreenV2(
                                 horizontalArrangement = Arrangement.Center
                             ) {
                                 TextButton(onClick = {
-                                    lyricFontSize = 18f
+                                    tempFontSize.value = 18f
                                 }) {
                                     Text(
                                         "恢复默认",
@@ -3577,20 +3693,107 @@ fun MyMusicScreenV2(
                     },
                     confirmButton = {
                         TextButton(onClick = {
-                            PlaybackSettingsStore.setLyricFontSize(context, lyricFontSize)
+                            lyricFontSize = tempFontSize.value
+                            PlaybackSettingsStore.setLyricFontSize(context, tempFontSize.value)
                             showLyricFontSizeDialog = false
                         }) {
                             Text("确定")
                         }
                     },
                     dismissButton = {
-                        TextButton(onClick = {
-                            showLyricFontSizeDialog = false
-                        }) {
+                        TextButton(onClick = { showLyricFontSizeDialog = false }) {
                             Text("取消")
                         }
                     },
                     containerColor = MaterialTheme.colorScheme.surface
+                )
+            }
+
+            // 渐变层亮度调节对话框
+            if (showGradientBrightnessDialog) {
+                val tempMultiplier = remember { mutableStateOf(gradientBrightnessMultiplier) }
+                val lastMultiplierValue = remember { mutableStateOf(tempMultiplier.value) }
+                val vibrator = remember {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
+                    } else {
+                        @Suppress("DEPRECATION")
+                        context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                    }
+                }
+                
+                AlertDialog(
+                    onDismissRequest = { showGradientBrightnessDialog = false },
+                    title = { Text("渐变层亮度") },
+                    text = {
+                        Column {
+                            Text(
+                                text = "调整全屏播放器背景渐变层亮度",
+                                color = colorScheme.onSurfaceVariant,
+                                fontSize = 14.sp
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("暗", fontSize = 12.sp, color = colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.width(8.dp))
+                                Slider(
+                                    value = tempMultiplier.value,
+                                    onValueChange = { newValue ->
+                                        // 计算最近的档位值（每5%一个档位）
+                                        val steppedValue = ((newValue * 100).roundToInt() / 5 * 5) / 100f
+                                        tempMultiplier.value = steppedValue.coerceIn(0.1f, 2.0f)
+                                        
+                                        // 只在档位变化时触发微振动（模拟齿轮感）
+                                        if (tempMultiplier.value != lastMultiplierValue.value) {
+                                            lastMultiplierValue.value = tempMultiplier.value
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK))
+                                            } else {
+                                                @Suppress("DEPRECATION")
+                                                vibrator.vibrate(10)
+                                            }
+                                        }
+                                    },
+                                    valueRange = 0.1f..2.0f,
+                                    steps = 37, // 10%到200%，每5%一个档位，共38档（37个间隔）
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("亮", fontSize = 12.sp, color = colorScheme.onSurfaceVariant)
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = "当前亮度: ${(tempMultiplier.value * 100).toInt()}%",
+                                color = colorScheme.primary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = "提示：过高亮度可能会影响可视度！",
+                                color = colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            gradientBrightnessMultiplier = tempMultiplier.value
+                            PlaybackSettingsStore.setGradientBrightnessMultiplier(context, tempMultiplier.value)
+                            showGradientBrightnessDialog = false
+                        }) {
+                            Text("确定")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showGradientBrightnessDialog = false }) {
+                            Text("取消")
+                        }
+                    },
+                    containerColor = colorScheme.surface
                 )
             }
 

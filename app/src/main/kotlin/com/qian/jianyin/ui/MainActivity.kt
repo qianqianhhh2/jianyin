@@ -52,6 +52,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.drawWithContent
@@ -69,7 +70,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
 import coil.ImageLoader
+import coil.request.SuccessResult
 import coil.decode.GifDecoder
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -119,6 +123,7 @@ import android.util.Log
 import android.app.Activity
 import android.view.Window
 import android.graphics.Color as AndroidColor
+import android.graphics.drawable.BitmapDrawable
 import android.widget.Toast
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -383,33 +388,8 @@ class MainActivity : ComponentActivity() {
             .build()
         coil.Coil.setImageLoader(imageLoader)
         
-        val mediaSessionManager = MediaSessionManager.getInstance(this)
-        mediaSessionManager.initialize()
-        
+        // MediaSessionManager 由 MusicViewModel 初始化，回调在 setContent 内部设置
         startKeepAliveServices(this)
-        
-        mediaSessionManager.controlCallback = object : MediaSessionManager.MediaControlCallback {
-            override fun onPlay() {
-                // 这里需要获取 ViewModel 实例
-                // 由于在 onCreate 中无法直接获取 Compose ViewModel，
-                // 我们将在 setContent 内部设置回调
-            }
-            override fun onPause() {
-                // 同上
-            }
-            override fun onNext() {
-                // 同上
-            }
-            override fun onPrevious() {
-                // 同上
-            }
-            override fun onStop() {
-                // 同上
-            }
-            override fun onSeekTo(position: Long) {
-                // 同上
-            }
-        }
         
         // 启动时获取一言
         lifecycleScope.launch {
@@ -1271,9 +1251,44 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
     Box(Modifier.fillMaxSize()) {
         // 背景渲染层（延伸到系统栏区域）
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-            AsyncImage(
-                model = song.pic, 
-                contentDescription = null, 
+            // 智能自动压暗封面：分析封面亮度，过亮时自动压暗
+            val autoDarkenEnabled = remember { PlaybackSettingsStore.isAutoDarkenCoverEnabled(context) }
+            val darkenAlpha = remember { mutableStateOf(0f) }
+            
+            // 使用 rememberAsyncImagePainter 来获取图片加载状态
+            val painter = rememberAsyncImagePainter(
+                model = song.pic,
+                error = painterResource(id = getRandomPlaceholderId())
+            )
+            
+            // 使用 LaunchedEffect 在协程中获取图片并分析亮度
+            LaunchedEffect(song.pic, autoDarkenEnabled) {
+                if (autoDarkenEnabled && song.pic.isNotEmpty()) {
+                    try {
+                        // 使用 ImageLoader 获取图片
+                        val request = ImageRequest.Builder(context)
+                            .data(song.pic)
+                            .allowHardware(false)
+                            .build()
+                        
+                        val result = ImageLoader(context).execute(request)
+                        if (result is coil.request.SuccessResult) {
+                            val bitmap = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+                            if (bitmap != null) {
+                                // 根据图片亮度计算压暗程度
+                                val alpha = ImageBrightnessAnalyzer.calculateDarkenAlpha(bitmap)
+                                darkenAlpha.value = alpha
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // 忽略加载失败的情况
+                    }
+                }
+            }
+            
+            Image(
+                painter = painter,
+                contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxSize()
@@ -1291,16 +1306,29 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                         } else {
                             Modifier
                         }
-                    ),
-                error = painterResource(id = getRandomPlaceholderId())
+                    )
             )
+            
+            // 根据分析结果动态添加压暗覆盖层
+            if (autoDarkenEnabled && darkenAlpha.value > 0) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = darkenAlpha.value))
+                )
+            }
         }
 
+        // 读取渐变层亮度调整系数（0.1-2.0，1.0为原始亮度）
+        val gradientBrightnessMultiplier = remember { 
+            PlaybackSettingsStore.getGradientBrightnessMultiplier(context) 
+        }
+        
         Box(Modifier.fillMaxSize().background(
             Brush.verticalGradient(listOf(
-                MaterialTheme.colorScheme.surface.copy(0.5f), 
-                MaterialTheme.colorScheme.surface.copy(0.1f), 
-                MaterialTheme.colorScheme.surface.copy(0.9f)
+                MaterialTheme.colorScheme.surface.copy(PlaybackSettingsStore.DEFAULT_GRADIENT_TOP_ALPHA * gradientBrightnessMultiplier), 
+                MaterialTheme.colorScheme.surface.copy(PlaybackSettingsStore.DEFAULT_GRADIENT_MIDDLE_ALPHA * gradientBrightnessMultiplier), 
+                MaterialTheme.colorScheme.surface.copy(PlaybackSettingsStore.DEFAULT_GRADIENT_BOTTOM_ALPHA * gradientBrightnessMultiplier)
             ))
         ))
 

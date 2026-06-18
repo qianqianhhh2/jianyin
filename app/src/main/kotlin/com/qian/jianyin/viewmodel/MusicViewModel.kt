@@ -1625,29 +1625,40 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     
-   // 播放控制
-fun togglePlay() {
-    if (player.isPlaying) {
-        applyFadeOut {
-            player.pause()
-            isPlaying.value = false
-            audioManager.abandonAudioFocus(audioFocusChangeListener)
-            mediaSessionManager.updatePlaybackState(false, player.currentPosition)
-        }
-    } else {
-        if (audioManager.requestAudioFocus(
-                audioFocusChangeListener,
-                AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN
-            ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        ) {
-            player.play()
-            isPlaying.value = true
-            applyFadeIn()
-            mediaSessionManager.updatePlaybackState(true, player.currentPosition)
+    /**
+     * 播放控制
+     * 切换播放/暂停状态
+     */
+    fun togglePlay() {
+        // 防止重复点击抖动
+        if (isPlaying.value == player.isPlaying) {
+            if (player.isPlaying) {
+                // 立即更新UI状态，避免动画期间状态不同步
+                isPlaying.value = false
+                mediaSessionManager.updatePlaybackState(false, player.currentPosition)
+                
+                applyFadeOut {
+                    player.pause()
+                    audioManager.abandonAudioFocus(audioFocusChangeListener)
+                }
+            } else {
+                if (audioManager.requestAudioFocus(
+                        audioFocusChangeListener,
+                        AudioManager.STREAM_MUSIC,
+                        AudioManager.AUDIOFOCUS_GAIN
+                    ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+                ) {
+                    // 立即更新UI状态，避免动画期间状态不同步
+                    isPlaying.value = true
+                    player.play()
+                    mediaSessionManager.updatePlaybackState(true, player.currentPosition)
+                    applyFadeIn()
+                }
+            }
+        } else {
+            Log.d("MusicVM", "togglePlay: 状态不同步，跳过")
         }
     }
-}
 
 
     fun seekTo(pos: Long) {
