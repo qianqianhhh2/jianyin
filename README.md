@@ -6,8 +6,8 @@
 
 **一个现代化的多平台音乐播放器**
 
-[![Android API](https://img.shields.io/badge/API-24%2B-brightgreen.svg?style=flat-square)](https://android-arsenal.com/api?level=24)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.3.0-blue.svg?style=flat-square)](https://kotlinlang.org)
+[![Android API](https://img.shields.io/badge/API-30%2B-brightgreen.svg?style=flat-square)](https://android-arsenal.com/api?level=30)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.1.0-blue.svg?style=flat-square)](https://kotlinlang.org)
 [![License](https://img.shields.io/badge/License-GPL%203.0-blue.svg?style=flat-square)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/qianqianhhh2/jianyin?style=flat-square)](https://github.com/qianqianhhh2/jianyin/stargazers)
 [![GitHub Forks](https://img.shields.io/github/forks/qianqianhhh2/jianyin?style=flat-square)](https://github.com/qianqianhhh2/jianyin/network/members)
@@ -47,7 +47,7 @@
 
 ### 开发语言
 
-- **Kotlin 2.3.0** - 现代化 Android 开发语言
+- **Kotlin 2.1.0** - 现代化 Android 开发语言
 
 ### 核心框架
 
@@ -108,6 +108,10 @@
 
 - **AndroidX Security** - `androidx.security:security-crypto:1.1.0-alpha06` 安全加密存储
 
+### 崩溃报告
+
+- **Bugly CrashReport** - `com.tencent.bugly:crashreport` 腾讯 Bugly 崩溃收集
+
 ### 权限处理
 
 - **Accompanist Permissions** - `com.google.accompanist:accompanist-permissions:0.35.1-alpha` Compose 权限处理
@@ -123,9 +127,9 @@
 
 ### 基础 AndroidX 库
 
-- **AndroidX Core KTX** - `androidx.core:core-ktx` (版本由 libs.versions.toml 管理)
-- **AndroidX AppCompat** - `androidx.appcompat:appcompat` (版本由 libs.versions.toml 管理)
-- **Material** - `com.google.android.material:material` (版本由 libs.versions.toml 管理)
+- **AndroidX Core KTX** - `androidx.core:core-ktx:1.17.0`
+- **AndroidX AppCompat** - `androidx.appcompat:appcompat:1.7.1`
+- **Material** - `com.google.android.material:material:1.13.0`
 
 ### 构建工具
 
@@ -200,6 +204,8 @@ jianyin/
 │   │   │   │   ├── VersionChecker.kt             # 版本检查器
 │   │   │   │   └── VersionUpdateDialog.kt        # 版本更新弹窗
 │   │   │   ├── CacheManager.kt                   # 缓存管理器
+│   │   │   ├── ImageBrightnessAnalyzer.kt        # 图片亮度分析器
+│   │   │   ├── JianYinApplication.kt             # Application 类
 │   │   │   └── PlaybackSettingsStore.kt          # 播放设置存储
 │   │   ├── res/                                  # 资源文件
 │   │   │   ├── drawable/                         # 图片/矢量图资源
@@ -271,7 +277,7 @@ jianyin/
 - **Android Studio** - Hedgehog (2023.1.1) 或更高版本
 - **Gradle** - 9.0 或更高版本
 - **JDK** - 17 或更高版本
-- **Android SDK** - API Level 24 或更高版本 (compileSdk 36)
+- **Android SDK** - API Level 30 或更高版本 (compileSdk 36)
 
 ### 克隆项目
 
