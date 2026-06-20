@@ -13,7 +13,11 @@ android {
         minSdk 30
         targetSdk 34
         versionCode 5
-        versionName '5.5.4'
+        versionName '5.5.6'
+        
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
+        }
     }
 
     signingConfigs {
@@ -28,6 +32,9 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 
@@ -112,4 +119,7 @@ dependencies {
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
     implementation 'org.json:json:20231013'
+    
+    // Bugly Crash Report
+    implementation 'com.tencent.bugly:crashreport:latest.release'
 }
