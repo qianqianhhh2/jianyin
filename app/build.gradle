@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId 'com.qian.jianyin'
-        minSdk 24
+        minSdk 30
         targetSdk 34
         versionCode 5
         versionName '5.5.4'
