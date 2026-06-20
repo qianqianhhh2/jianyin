@@ -9,29 +9,17 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.common.util.UnstableApi
 
 /**
  * 播放服务
  *
- * 继承自 MediaSessionService，提供媒体播放功能，
- * 处理媒体按钮事件和前台服务通知。
- *去tm的魔改系统
+ * 继承自 MediaSessionService，提供前台服务能力，
+ * 由 MediaSessionManager 统一管理媒体会话。
  */
 @UnstableApi
 class PlaybackService : MediaSessionService() {
-    /**
-     * 媒体会话实例
-     */
-    private var mediaSession: MediaSession? = null
-
-    /**
-     * 绑定客户端计数
-     */
-    private var bindCount = 0
 
     /**
      * 通知渠道 ID
@@ -45,29 +33,15 @@ class PlaybackService : MediaSessionService() {
 
     /**
      * 创建服务时调用
-     *
-     * 初始化通知渠道、ExoPlayer 和 MediaSession。
      */
     override fun onCreate() {
         super.onCreate()
-
         createNotificationChannel()
-        
-        // 先启动前台服务，确保在5秒内调用startForeground()
         startForegroundService()
-
-        // 然后再创建ExoPlayer和MediaSession
-        val player = ExoPlayer.Builder(this).build()
-        mediaSession = MediaSession.Builder(this, player)
-            .setId("JianyinMusicSession")
-            .build()
     }
 
     /**
      * 创建通知渠道
-     *
-     * 为 Android 8.0+ 设备创建媒体通知渠道，
-     * 用于显示前台服务通知。
      */
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -88,27 +62,10 @@ class PlaybackService : MediaSessionService() {
 
     /**
      * 启动服务时调用
-     *
-     * 处理媒体按钮事件，确保服务在前台运行，
-     * 并返回 START_STICKY 确保服务被系统杀死后能重新启动。
      */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
-        intent?.let {
-            if (Intent.ACTION_MEDIA_BUTTON == it.action) {
-                val mediaSessionManager = MediaSessionManager.getInstance(applicationContext)
-                val session = mediaSessionManager.getMediaSession()
-                val keyEvent = it.getParcelableExtra<android.view.KeyEvent>(Intent.EXTRA_KEY_EVENT)
-                if (keyEvent != null) {
-                    val handled = session?.controller?.dispatchMediaButtonEvent(keyEvent) ?: false
-                    if (handled) {
-                        Log.d("PlaybackService", "媒体按钮事件已处理")
-                    }
-                }
-            }
-        }
-
-        // 不再在这里创建前台服务通知，由 MediaSessionManager 管理
+        startForegroundService()
         return START_STICKY
     }
 
@@ -136,50 +93,22 @@ class PlaybackService : MediaSessionService() {
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .build()
 
-        // 直接调用 startForeground，确保服务在 5 秒内启动前台模式
         startForeground(NOTIFICATION_ID, notification)
     }
 
     /**
-     * 绑定服务时调用
-     *
-     * 增加绑定计数，提升服务优先级。
+     * 获取媒体会话实例（由 MediaSessionManager 管理）
      */
-    override fun onBind(intent: Intent?): IBinder? {
-        bindCount++
-        Log.d("PlaybackService", "服务被绑定，当前绑定数: $bindCount")
-        return super.onBind(intent)
-    }
-
-    /**
-     * 解绑服务时调用
-     *
-     * 减少绑定计数。
-     */
-    override fun onUnbind(intent: Intent?): Boolean {
-        bindCount--
-        Log.d("PlaybackService", "服务解绑，当前绑定数: $bindCount")
-        return super.onUnbind(intent)
-    }
-
-    /**
-     * 获取媒体会话实例
-     */
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
-        return mediaSession
+    override fun onGetSession(controllerInfo: androidx.media3.session.MediaSession.ControllerInfo): androidx.media3.session.MediaSession? {
+        // 返回 null，媒体会话由 MediaSessionManager 统一管理
+        return null
     }
 
     /**
      * 销毁服务时调用
-     *
-     * 释放 ExoPlayer 和 MediaSession 资源。
      */
     override fun onDestroy() {
-        mediaSession?.run {
-            player.release()
-            release()
-            mediaSession = null
-        }
         super.onDestroy()
+        Log.d("PlaybackService", "服务销毁")
     }
 }

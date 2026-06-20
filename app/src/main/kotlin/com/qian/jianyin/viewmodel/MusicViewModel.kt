@@ -82,6 +82,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val isPlaying = mutableStateOf(false)
     val isLoading = mutableStateOf(false)
     val isPlayerSheetVisible = mutableStateOf(false)
+    
+    // 标记用户是否主动暂停
+    private var userPaused = false
 
     // 进度与歌词
     val currentLrc = mutableStateListOf<LyricEntry>()
@@ -155,18 +158,22 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         when (focusChange) {
             AudioManager.AUDIOFOCUS_GAIN -> {
                 Log.d("MusicVM", "音频焦点获取: 重新获得焦点")
-                if (!player.isPlaying && currentSong.value != null) {
+                player.volume = 1.0f
+                // 只有在非用户主动暂停的情况下才自动恢复播放
+                if (!player.isPlaying && currentSong.value != null && !userPaused) {
                     player.play()
                     isPlaying.value = true
                 }
             }
             AudioManager.AUDIOFOCUS_LOSS -> {
                 Log.d("MusicVM", "音频焦点丢失: 永久失去焦点")
+                userPaused = false
                 player.pause()
                 isPlaying.value = false
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                 Log.d("MusicVM", "音频焦点丢失: 暂时失去焦点")
+                userPaused = false
                 player.pause()
                 isPlaying.value = false
             }
@@ -1633,6 +1640,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         // 防止重复点击抖动
         if (isPlaying.value == player.isPlaying) {
             if (player.isPlaying) {
+                // 用户主动暂停
+                userPaused = true
                 // 立即更新UI状态，避免动画期间状态不同步
                 isPlaying.value = false
                 mediaSessionManager.updatePlaybackState(false, player.currentPosition)
@@ -1642,6 +1651,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     audioManager.abandonAudioFocus(audioFocusChangeListener)
                 }
             } else {
+                userPaused = false
                 if (audioManager.requestAudioFocus(
                         audioFocusChangeListener,
                         AudioManager.STREAM_MUSIC,
