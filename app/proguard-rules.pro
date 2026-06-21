@@ -91,3 +91,17 @@
 -keepattributes InnerClasses
 -keepattributes Signature
 -keep class kotlin.Metadata { *; }
+
+# org.json 库保护（解决重复 key 解析问题）
+-keep class org.json.** { *; }
+-keep interface org.json.** { *; }
+-dontwarn org.json.**
+
+# 网易云 API 相关保护
+-keep class com.qian.jianyin.netease.api.JSONUtils { *; }
+-keepclassmembers class com.qian.jianyin.netease.api.NeteaseApiService {
+    public *;
+}
+-keepclassmembers class com.qian.jianyin.netease.api.NeteaseClient {
+    public *;
+}
