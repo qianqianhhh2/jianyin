@@ -140,8 +140,22 @@ object DownloadSettingsStore {
      * 获取下载音质设置 (Neri 风格 level key)
      */
     fun getDownloadQuality(context: Context): String {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_DOWNLOAD_QUALITY, "exhigh") ?: "exhigh"
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return try {
+            prefs.getString(KEY_DOWNLOAD_QUALITY, "exhigh") ?: "exhigh"
+        } catch (e: ClassCastException) {
+            // 处理旧版本 Integer 类型数据迁移
+            val oldValue = prefs.getInt(KEY_DOWNLOAD_QUALITY, 2)
+            val quality = when (oldValue) {
+                0 -> "standard"
+                1 -> "higher"
+                2 -> "exhigh"
+                3 -> "lossless"
+                else -> "exhigh"
+            }
+            setDownloadQuality(context, quality)
+            quality
+        }
     }
 
     fun setDownloadQuality(context: Context, quality: String) {
@@ -154,8 +168,22 @@ object DownloadSettingsStore {
      * 获取播放音质设置 (Neri 风格 level key)
      */
     fun getPlayQuality(context: Context): String {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_PLAY_QUALITY, "exhigh") ?: "exhigh"
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return try {
+            prefs.getString(KEY_PLAY_QUALITY, "exhigh") ?: "exhigh"
+        } catch (e: ClassCastException) {
+            // 处理旧版本 Integer 类型数据迁移
+            val oldValue = prefs.getInt(KEY_PLAY_QUALITY, 2)
+            val quality = when (oldValue) {
+                0 -> "standard"
+                1 -> "higher"
+                2 -> "exhigh"
+                3 -> "lossless"
+                else -> "exhigh"
+            }
+            setPlayQuality(context, quality)
+            quality
+        }
     }
 
     fun setPlayQuality(context: Context, quality: String) {

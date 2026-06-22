@@ -478,16 +478,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     
     /**
      * 心动模式 - 从多个来源按比例随机获取歌曲
-     * 比例：今日推荐(30%) : 个性化推荐(50%) : 用户曲库(20%)
+     * 比例：个性化推荐(60%) : 用户曲库(40%)
      */
     private fun initializeHeartbeatMode() {
         Log.d("MusicVM", "初始化心动模式")
         viewModelScope.launch {
             try {
-                // 获取今日推荐歌曲（热歌榜作为今日推荐的代表）
-                val todayRecommendSongs = fetchTodayRecommendSongs()
-                Log.d("MusicVM", "今日推荐歌曲数: ${todayRecommendSongs.size}")
-                
                 // 获取个性化推荐歌单的歌曲
                 val personalizedSongs = fetchPersonalizedSongs()
                 Log.d("MusicVM", "个性化推荐歌曲数: ${personalizedSongs.size}")
@@ -496,22 +492,20 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 val librarySongs = fetchLibrarySongs()
                 Log.d("MusicVM", "用户曲库歌曲数: ${librarySongs.size}")
                 
-                // 按比例随机选取歌曲（3:5:2）
+                // 按比例随机选取歌曲（6:4）
                 val totalCount = 50 // 总共选取50首歌曲
-                val recommendCount = (totalCount * 0.3).toInt() // 15首
-                val personalizedCount = (totalCount * 0.5).toInt() // 25首
-                val libraryCount = totalCount - recommendCount - personalizedCount // 10首
+                val personalizedCount = (totalCount * 0.6).toInt() // 30首
+                val libraryCount = totalCount - personalizedCount // 20首
                 
                 // 随机选取
-                val selectedRecommend = todayRecommendSongs.shuffled().take(recommendCount)
                 val selectedPersonalized = personalizedSongs.shuffled().take(personalizedCount)
                 val selectedLibrary = librarySongs.shuffled().take(libraryCount)
                 
-                // 合并并打乱顺序
-                val heartbeatQueue = (selectedRecommend + selectedPersonalized + selectedLibrary).shuffled()
+                // 合并为顺序播放队列
+                val heartbeatQueue = selectedPersonalized + selectedLibrary
                 
                 Log.d("MusicVM", "心动模式队列构建完成，总歌曲数: ${heartbeatQueue.size}")
-                Log.d("MusicVM", "今日推荐选取: ${selectedRecommend.size}, 个性化推荐选取: ${selectedPersonalized.size}, 用户曲库选取: ${selectedLibrary.size}")
+                Log.d("MusicVM", "个性化推荐选取: ${selectedPersonalized.size}, 用户曲库选取: ${selectedLibrary.size}")
                 
                 // 更新播放队列
                 if (heartbeatQueue.isNotEmpty()) {

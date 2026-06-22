@@ -1,10 +1,10 @@
-plugins {
+    plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-}
+    }
 
-android {
+    android {
     namespace 'com.qian.jianyin'
     compileSdk 36
 
@@ -13,7 +13,7 @@ android {
         minSdk 30
         targetSdk 34
         versionCode 5
-        versionName '5.5.7'
+        versionName '5.5.8'
         
         ndk {
             abiFilters 'armeabi-v7a', 'arm64-v8a'
@@ -47,7 +47,7 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
-    
+
     kotlin {
         compilerOptions {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
@@ -57,9 +57,9 @@ android {
     lint {
         disable 'UnsafeOptInUsageError'
     }
-}
+    }
 
-dependencies {
+    dependencies {
     // 基础 AndroidX 库
     implementation libs.androidx.core.ktx
     implementation libs.androidx.appcompat
@@ -119,7 +119,7 @@ dependencies {
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
     implementation 'org.json:json:20231013'
-    
+
     // Bugly Crash Report
     implementation 'com.tencent.bugly:crashreport:latest.release'
-}
+    }
