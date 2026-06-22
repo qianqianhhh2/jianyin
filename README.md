@@ -24,6 +24,20 @@
 
 > **重要声明**：出于项目存活考虑，本项目已不再依赖 Meting API，现已独立实现网易云和 Bilibili 的音乐接口。
 
+## 应用截图
+
+<div align="center">
+
+| 首页 | 搜索 | 播放器 | 歌词 |
+|:---:|:---:|:---:|:---:|
+| <img src="images/screenshot_home.jpg" width="250" alt="首页"> | <img src="images/screenshot_search.jpg" width="250" alt="搜索"> | <img src="images/screenshot_player.jpg" width="250" alt="播放器"> | <img src="images/screenshot_lrc.jpg" width="250" alt="歌词"> |
+
+| 音乐库 | 播放列表 | 设置 |
+|:---:|:---:|:---:|
+| <img src="images/screenshot_library.jpg" width="250" alt="音乐库"> | <img src="images/screenshot_playlist.jpg" width="250" alt="播放列表"> | <img src="images/screenshot_settings.jpg" width="250" alt="设置"> |
+
+</div>
+
 ## 核心特性
 
 - **多平台音乐支持** - 集成网易云音乐、Bilibili、本地音乐多平台播放
