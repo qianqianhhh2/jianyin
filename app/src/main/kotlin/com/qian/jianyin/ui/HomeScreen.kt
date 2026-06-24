@@ -282,6 +282,15 @@ fun HomeScreen(
             }
         ) { targetId ->
             targetId?.let {
+                // 计算当前播放歌曲在歌单中的索引
+                val currentPlayingIndex = remember(vm.currentSong.value, playlistSongs) {
+                    vm.currentSong.value?.let { currentSong ->
+                        playlistSongs.indexOfFirst { song ->
+                            (song.id.isNotBlank() && song.id == currentSong.id) ||
+                            (song.url.isNotBlank() && song.url == currentSong.url)
+                        }.takeIf { it >= 0 }
+                    }
+                }
                 PlaylistDetailPage(
                     playlistName = activePlaylistName,
                     songs = playlistSongs,
@@ -291,6 +300,7 @@ fun HomeScreen(
                     showAddToPlaylistDialog = showAddToPlaylistDialog,
                     showCreatePlaylistDialog = showCreatePlaylistDialog,
                     createPlaylistName = createPlaylistName,
+                    currentPlayingIndex = currentPlayingIndex,
                     onBack = {
                         if (isSelectionMode) {
                             isSelectionMode = false
@@ -673,6 +683,7 @@ private fun PlaylistDetailPage(
     showAddToPlaylistDialog: Boolean,
     showCreatePlaylistDialog: Boolean,
     createPlaylistName: String,
+    currentPlayingIndex: Int?,
     onBack: () -> Unit,
     onPlayAll: () -> Unit,
     onSongClick: (Song, Int) -> Unit,
@@ -699,6 +710,19 @@ private fun PlaylistDetailPage(
         }
     } else {
         songs
+    }
+
+    val listState = rememberLazyListState()
+
+    // 自动滚动到当前播放歌曲
+    LaunchedEffect(currentPlayingIndex) {
+        currentPlayingIndex?.let { index ->
+            if (index >= 0) {
+                // 延迟一点滚动，等待列表渲染完成
+                kotlinx.coroutines.delay(100)
+                listState.animateScrollToItem(index.coerceIn(0, (filteredSongs.size - 1).coerceAtLeast(0)))
+            }
+        }
     }
 
     BackHandler {
@@ -790,7 +814,7 @@ private fun PlaylistDetailPage(
                 CircularProgressIndicator(color = colorScheme.primary)
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
                 if (songs.isNotEmpty()) {
                     item {
                         val hazeState = remember { HazeState() }
@@ -852,11 +876,13 @@ private fun PlaylistDetailPage(
                 itemsIndexed(filteredSongs) { index, song ->
                     Column {
                         val isSelected = index in selectedSongs
+                        val isCurrentlyPlaying = index == currentPlayingIndex
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(
                                     if (isSelected) colorScheme.primary.copy(alpha = 0.1f)
+                                    else if (isCurrentlyPlaying) colorScheme.primary.copy(alpha = 0.05f)
                                     else Color.Transparent
                                 )
                                 .combinedClickable(
@@ -866,6 +892,19 @@ private fun PlaylistDetailPage(
                                 .padding(horizontal = 20.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // 当前播放主题色竖线标识
+                            if (isCurrentlyPlaying) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(3.dp)
+                                        .height(24.dp)
+                                        .background(
+                                            colorScheme.primary,
+                                            shape = RoundedCornerShape(2.dp)
+                                        )
+                                )
+                                Spacer(Modifier.width(12.dp))
+                            }
                             if (isSelectionMode) {
                                 Box(
                                     modifier = Modifier

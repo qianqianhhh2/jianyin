@@ -3110,7 +3110,7 @@ fun LyricList(vm: MusicViewModel) {
             horizontalAlignment = Alignment.Start,
             contentPadding = PaddingValues(top = centerPad, bottom = centerPad + navBarPadding)
         ) {
-            itemsIndexed(vm.currentLrc, key = { _, line -> "${line.startTimeMs}:${line.endTimeMs}" }) { index, line ->
+            itemsIndexed(vm.currentLrc, key = { idx, line -> "${line.startTimeMs}:${line.endTimeMs}:$idx" }) { index, line ->
                 val isCurrent by remember {
                     derivedStateOf { index == currentIndex }
                 }

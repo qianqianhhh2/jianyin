@@ -1,6 +1,8 @@
 package com.qian.jianyin
 
 import android.widget.Toast
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.*
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -241,15 +243,53 @@ fun SearchScreen(
                                 )
                             )
                         }
+                        val searchListState = rememberLazyListState()
+
+                        // 计算当前播放歌曲在搜索结果中的索引
+                        val currentPlayingIndex = remember(vm.currentSong.value, vm.searchResults) {
+                            vm.currentSong.value?.let { currentSong ->
+                                vm.searchResults.indexOfFirst { song ->
+                                    (song.id.isNotBlank() && song.id == currentSong.id) ||
+                                    (song.url.isNotBlank() && song.url == currentSong.url)
+                                }.takeIf { it >= 0 }
+                            }
+                        }
+
+                        // 自动滚动到当前播放歌曲
+                        LaunchedEffect(currentPlayingIndex) {
+                            currentPlayingIndex?.let { index ->
+                                if (index >= 0) {
+                                    kotlinx.coroutines.delay(100)
+                                    searchListState.animateScrollToItem(index.coerceIn(0, (vm.searchResults.size - 1).coerceAtLeast(0)))
+                                }
+                            }
+                        }
+
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
+                            state = searchListState,
                             contentPadding = innerPadding
                         ) {
                             itemsIndexed(vm.searchResults) { index, song ->
                                 val isSelected = selectedSongs.contains(index)
+                                val isCurrentlyPlaying = remember(vm.currentSong.value) {
+                                    vm.currentSong.value?.let { currentSong ->
+                                        song.id.isNotBlank() && song.id == currentSong.id ||
+                                        song.url.isNotBlank() && song.url == currentSong.url
+                                    } ?: false
+                                }
+                                val playingLineHeight by animateDpAsState(
+                                    targetValue = if (isCurrentlyPlaying) 24.dp else 0.dp,
+                                    animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f),
+                                    label = "playingLineHeight"
+                                )
                                 Column(
                                     modifier = Modifier
-                                        .background(if (isSelected) colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
+                                        .background(
+                                            if (isSelected) colorScheme.primary.copy(alpha = 0.1f)
+                                            else if (isCurrentlyPlaying) colorScheme.primary.copy(alpha = 0.05f)
+                                            else Color.Transparent
+                                        )
                                         .combinedClickable(
                                             onClick = {
                                                 if (isSelectionMode) {
@@ -279,6 +319,19 @@ fun SearchScreen(
                                             .padding(horizontal = 16.dp, vertical = 10.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        // 当前播放主题色竖线标识
+                                        if (isCurrentlyPlaying) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .width(3.dp)
+                                                    .height(playingLineHeight)
+                                                    .background(
+                                                        colorScheme.primary,
+                                                        shape = RoundedCornerShape(2.dp)
+                                                    )
+                                            )
+                                            Spacer(Modifier.width(12.dp))
+                                        }
                                         if (isSelectionMode) {
                                             Box(
                                                 modifier = Modifier

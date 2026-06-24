@@ -13,6 +13,7 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -1969,7 +1970,29 @@ fun MyMusicScreenV2(
                                 CircularProgressIndicator(color = colorScheme.primary)
                             }
                         } else {
-                            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            val playlistDetailListState = rememberLazyListState()
+
+                            // 计算当前播放歌曲在歌单中的索引
+                            val currentPlayingIndex = remember(vm.currentSong.value, filteredAndSortedSongs) {
+                                vm.currentSong.value?.let { currentSong ->
+                                    filteredAndSortedSongs.indexOfFirst { song ->
+                                        (song.id.isNotBlank() && song.id == currentSong.id) ||
+                                        (song.url.isNotBlank() && song.url == currentSong.url)
+                                    }.takeIf { it >= 0 }
+                                }
+                            }
+
+                            // 自动滚动到当前播放歌曲
+                            LaunchedEffect(currentPlayingIndex) {
+                                currentPlayingIndex?.let { index ->
+                                    if (index >= 0) {
+                                        kotlinx.coroutines.delay(100)
+                                        playlistDetailListState.animateScrollToItem(index.coerceIn(0, (filteredAndSortedSongs.size - 1).coerceAtLeast(0)))
+                                    }
+                                }
+                            }
+
+                            LazyColumn(modifier = Modifier.fillMaxSize(), state = playlistDetailListState) {
                                 if (filteredAndSortedSongs.isNotEmpty()) {
                                     item {
                                         val hazeState = remember { HazeState() }
@@ -2042,6 +2065,17 @@ fun MyMusicScreenV2(
                                     Column {
                                         val isSelected = selectedSongs.contains(index)
                                         val isDragging = draggedSongIndex != -1 && selectedSongs.contains(index)
+                                        val isCurrentlyPlaying = remember(vm.currentSong.value) {
+                                            vm.currentSong.value?.let { currentSong ->
+                                                song.id.isNotBlank() && song.id == currentSong.id ||
+                                                song.url.isNotBlank() && song.url == currentSong.url
+                                            } ?: false
+                                        }
+                                        val playingLineHeight by animateDpAsState(
+                                            targetValue = if (isCurrentlyPlaying) 24.dp else 0.dp,
+                                            animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f),
+                                            label = "playingLineHeight"
+                                        )
                                         
                                         // 微小的弹簧缩放动画
                                         val scale by animateFloatAsState(
@@ -2065,6 +2099,8 @@ fun MyMusicScreenV2(
                                                         colorScheme.primary.copy(alpha = 0.1f)
                                                     else if (isDragging)
                                                         colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                                    else if (isCurrentlyPlaying)
+                                                        colorScheme.primary.copy(alpha = 0.05f)
                                                     else
                                                         colorScheme.background
                                                 )
@@ -2129,6 +2165,19 @@ fun MyMusicScreenV2(
                                                 .padding(horizontal = 20.dp, vertical = 10.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
+                                            // 当前播放主题色竖线标识
+                                            if (isCurrentlyPlaying) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .width(3.dp)
+                                                        .height(playingLineHeight)
+                                                        .background(
+                                                            colorScheme.primary,
+                                                            shape = RoundedCornerShape(2.dp)
+                                                        )
+                                                )
+                                                Spacer(Modifier.width(12.dp))
+                                            }
                                             // 选择模式下显示选择框
                                             if (isSelectionMode) {
                                                 Box(
