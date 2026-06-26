@@ -11,7 +11,6 @@ object PlaybackSettingsStore {
     private const val KEY_LYRIC_FONT_SIZE = "lyric_font_size" // 歌词字体大小 (sp)
     private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"   // 屏幕常亮
     private const val KEY_GRADIENT_BRIGHTNESS = "gradient_brightness" // 大播放器渐变层亮度 (0.0-1.0)
-    private const val KEY_AUTO_DARKEN_COVER = "auto_darken_cover" // 自动压暗封面
 
     // ========== 歌词字体大小设置 ==========
 
@@ -87,26 +86,4 @@ object PlaybackSettingsStore {
             .apply()
     }
 
-    // ========== 自动压暗封面设置 ==========
-
-    /**
-     * 获取自动压暗封面设置
-     * @param context 上下文
-     * @return 是否开启自动压暗封面，默认 true
-     */
-    fun isAutoDarkenCoverEnabled(context: Context): Boolean {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_AUTO_DARKEN_COVER, true)
-    }
-
-    /**
-     * 设置自动压暗封面
-     * @param context 上下文
-     * @param enabled 是否开启
-     */
-    fun setAutoDarkenCoverEnabled(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_AUTO_DARKEN_COVER, enabled)
-            .apply()
-    }
 }

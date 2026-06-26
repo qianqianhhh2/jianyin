@@ -118,6 +118,8 @@ import androidx.activity.BackEventCompat
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
+import androidx.compose.foundation.isSystemInDarkTheme
+import com.qian.jianyin.ui.view.ShaderBackground
 import android.os.VibratorManager
 import android.util.Log
 import android.app.Activity
@@ -1226,97 +1228,14 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
         }
     }
 
-    // --- 背景动画逻辑 ---
-    val infiniteTransition = rememberInfiniteTransition(label = "LiquidBackground")
-    
-    val offsetX by infiniteTransition.animateFloat(
-        initialValue = -160f, targetValue = 120f, 
-        animationSpec = infiniteRepeatable(tween(25000, easing = LinearEasing), RepeatMode.Reverse), label = "x"
-    )
-    val offsetY by infiniteTransition.animateFloat(
-        initialValue = 100f, targetValue = -100f, 
-        animationSpec = infiniteRepeatable(tween(30000, easing = LinearEasing), RepeatMode.Reverse), label = "y"
-    )
-    
-    val scale by infiniteTransition.animateFloat(
-        initialValue = 3.2f, targetValue = 4.0f, 
-        animationSpec = infiniteRepeatable(tween(20000, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "s"
-    )
-    
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 360f, 
-        animationSpec = infiniteRepeatable(tween(60000, easing = LinearEasing)), label = "r"
-    )
-
     Box(Modifier.fillMaxSize()) {
-        // 背景渲染层（延伸到系统栏区域）
+        // 流光着色器动态背景（Android 13+ RuntimeShader，低版本降级为纯色背景）
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-            // 智能自动压暗封面：分析封面亮度，过亮时自动压暗
-            val autoDarkenEnabled = remember { PlaybackSettingsStore.isAutoDarkenCoverEnabled(context) }
-            val darkenAlpha = remember { mutableStateOf(0f) }
-            
-            // 使用 rememberAsyncImagePainter 来获取图片加载状态
-            val painter = rememberAsyncImagePainter(
-                model = song.pic,
-                error = painterResource(id = getRandomPlaceholderId())
+            ShaderBackground(
+                modifier = Modifier.fillMaxSize(),
+                coverUrl = song.pic,
+                isDark = isSystemInDarkTheme()
             )
-            
-            // 使用 LaunchedEffect 在协程中获取图片并分析亮度
-            LaunchedEffect(song.pic, autoDarkenEnabled) {
-                if (autoDarkenEnabled && song.pic.isNotEmpty()) {
-                    try {
-                        // 使用 ImageLoader 获取图片
-                        val request = ImageRequest.Builder(context)
-                            .data(song.pic)
-                            .allowHardware(false)
-                            .build()
-                        
-                        val result = ImageLoader(context).execute(request)
-                        if (result is coil.request.SuccessResult) {
-                            val bitmap = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
-                            if (bitmap != null) {
-                                // 根据图片亮度计算压暗程度
-                                val alpha = ImageBrightnessAnalyzer.calculateDarkenAlpha(bitmap)
-                                darkenAlpha.value = alpha
-                            }
-                        }
-                    } catch (e: Exception) {
-                        // 忽略加载失败的情况
-                    }
-                }
-            }
-            
-            Image(
-                painter = painter,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer(
-                        scaleX = scale, 
-                        scaleY = scale, 
-                        translationX = offsetX, 
-                        translationY = offsetY, 
-                        rotationZ = rotation,
-                        alpha = 0.6f
-                    )
-                    .then(
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            Modifier.blur(radius = 20.dp)
-                        } else {
-                            Modifier
-                        }
-                    )
-            )
-            
-            // 根据分析结果动态添加压暗覆盖层
-            if (autoDarkenEnabled && darkenAlpha.value > 0) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = darkenAlpha.value))
-                )
-            }
         }
 
         // 读取渐变层亮度调整系数（0.1-2.0，1.0为原始亮度）

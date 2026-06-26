@@ -210,12 +210,6 @@ fun MyMusicScreenV2(
         )
     }
 
-    // 自动压暗封面设置相关状态
-    var autoDarkenCoverEnabled by remember {
-        mutableStateOf(
-            PlaybackSettingsStore.isAutoDarkenCoverEnabled(context)
-        )
-    }
 
     // 渐变层亮度设置相关状态
     var showGradientBrightnessDialog by remember { mutableStateOf(false) }
@@ -3235,25 +3229,7 @@ fun MyMusicScreenV2(
                                                     )
                                                 }
                                             )
-                                            HorizontalDivider(color = colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                                            // 自动压暗封面
-                                            ListItem(
-                                                headlineContent = { Text("自动压暗") },
-                                                supportingContent = { Text("当封面过亮时自动变暗，提升可视度", color = colorScheme.onSurfaceVariant) },
-                                                leadingContent = {
-                                                    Icon(Icons.Default.BrightnessLow, null, tint = colorScheme.onSurfaceVariant)
-                                                },
-                                                trailingContent = {
-                                                    Switch(
-                                                        checked = autoDarkenCoverEnabled,
-                                                        onCheckedChange = { enabled ->
-                                                            autoDarkenCoverEnabled = enabled
-                                                            PlaybackSettingsStore.setAutoDarkenCoverEnabled(context, enabled)
-                                                        }
-                                                    )
-                                                }
-                                            )
-                                            HorizontalDivider(color = colorScheme.surfaceVariant.copy(alpha = 0.3f))
+
                                         }
                                     }
                                 } else {

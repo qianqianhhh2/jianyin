@@ -218,7 +218,6 @@ jianyin/
 │   │   │   │   ├── VersionChecker.kt             # 版本检查器
 │   │   │   │   └── VersionUpdateDialog.kt        # 版本更新弹窗
 │   │   │   ├── CacheManager.kt                   # 缓存管理器
-│   │   │   ├── ImageBrightnessAnalyzer.kt        # 图片亮度分析器
 │   │   │   ├── JianYinApplication.kt             # Application 类
 │   │   │   └── PlaybackSettingsStore.kt          # 播放设置存储
 │   │   ├── res/                                  # 资源文件
