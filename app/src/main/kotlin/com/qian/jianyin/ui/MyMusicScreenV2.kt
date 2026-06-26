@@ -1973,13 +1973,11 @@ fun MyMusicScreenV2(
                             val playlistDetailListState = rememberLazyListState()
 
                             // 计算当前播放歌曲在歌单中的索引
-                            val currentPlayingIndex = remember(vm.currentSong.value, filteredAndSortedSongs) {
-                                vm.currentSong.value?.let { currentSong ->
-                                    filteredAndSortedSongs.indexOfFirst { song ->
-                                        (song.id.isNotBlank() && song.id == currentSong.id) ||
-                                        (song.url.isNotBlank() && song.url == currentSong.url)
-                                    }.takeIf { it >= 0 }
-                                }
+                            val currentPlayingIndex = vm.currentSong.value?.let { currentSong ->
+                                filteredAndSortedSongs.indexOfFirst { song ->
+                                    (song.id.isNotBlank() && song.id == currentSong.id) ||
+                                    (song.url.isNotBlank() && song.url == currentSong.url)
+                                }.takeIf { it >= 0 }
                             }
 
                             // 自动滚动到当前播放歌曲

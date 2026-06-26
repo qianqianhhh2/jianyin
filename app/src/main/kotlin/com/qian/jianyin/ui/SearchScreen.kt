@@ -246,13 +246,11 @@ fun SearchScreen(
                         val searchListState = rememberLazyListState()
 
                         // 计算当前播放歌曲在搜索结果中的索引
-                        val currentPlayingIndex = remember(vm.currentSong.value, vm.searchResults) {
-                            vm.currentSong.value?.let { currentSong ->
-                                vm.searchResults.indexOfFirst { song ->
-                                    (song.id.isNotBlank() && song.id == currentSong.id) ||
-                                    (song.url.isNotBlank() && song.url == currentSong.url)
-                                }.takeIf { it >= 0 }
-                            }
+                        val currentPlayingIndex = vm.currentSong.value?.let { currentSong ->
+                            vm.searchResults.indexOfFirst { song ->
+                                (song.id.isNotBlank() && song.id == currentSong.id) ||
+                                (song.url.isNotBlank() && song.url == currentSong.url)
+                            }.takeIf { it >= 0 }
                         }
 
                         // 自动滚动到当前播放歌曲

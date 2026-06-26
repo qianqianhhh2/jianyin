@@ -3,6 +3,8 @@ package com.qian.jianyin
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.*
@@ -128,10 +130,10 @@ fun HomeScreen(
     fun openPlaylist(id: String, name: String) {
         activePlaylistId = id
         activePlaylistName = name
+        playlistSongs.clear()
         scope.launch {
             isDetailLoading = true
             val result = PlaylistSyncManager.fetchPlaylist(id, context)
-            playlistSongs.clear()
             if (result != null) playlistSongs.addAll(result)
             isDetailLoading = false
         }
@@ -283,13 +285,11 @@ fun HomeScreen(
         ) { targetId ->
             targetId?.let {
                 // 计算当前播放歌曲在歌单中的索引
-                val currentPlayingIndex = remember(vm.currentSong.value, playlistSongs) {
-                    vm.currentSong.value?.let { currentSong ->
-                        playlistSongs.indexOfFirst { song ->
-                            (song.id.isNotBlank() && song.id == currentSong.id) ||
-                            (song.url.isNotBlank() && song.url == currentSong.url)
-                        }.takeIf { it >= 0 }
-                    }
+                val currentPlayingIndex = vm.currentSong.value?.let { currentSong ->
+                    playlistSongs.indexOfFirst { song ->
+                        (song.id.isNotBlank() && song.id == currentSong.id) ||
+                        (song.url.isNotBlank() && song.url == currentSong.url)
+                    }.takeIf { it >= 0 }
                 }
                 PlaylistDetailPage(
                     playlistName = activePlaylistName,
@@ -301,6 +301,7 @@ fun HomeScreen(
                     showCreatePlaylistDialog = showCreatePlaylistDialog,
                     createPlaylistName = createPlaylistName,
                     currentPlayingIndex = currentPlayingIndex,
+                    currentSong = vm.currentSong.value,
                     onBack = {
                         if (isSelectionMode) {
                             isSelectionMode = false
@@ -684,6 +685,7 @@ private fun PlaylistDetailPage(
     showCreatePlaylistDialog: Boolean,
     createPlaylistName: String,
     currentPlayingIndex: Int?,
+    currentSong: Song?,
     onBack: () -> Unit,
     onPlayAll: () -> Unit,
     onSongClick: (Song, Int) -> Unit,
@@ -876,7 +878,17 @@ private fun PlaylistDetailPage(
                 itemsIndexed(filteredSongs) { index, song ->
                     Column {
                         val isSelected = index in selectedSongs
-                        val isCurrentlyPlaying = index == currentPlayingIndex
+                        val isCurrentlyPlaying = remember(currentSong) {
+                            currentSong?.let { current ->
+                                (song.id.isNotBlank() && song.id == current.id) ||
+                                (song.url.isNotBlank() && song.url == current.url)
+                            } ?: false
+                        }
+                        val playingLineHeight by animateDpAsState(
+                            targetValue = if (isCurrentlyPlaying) 24.dp else 0.dp,
+                            animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f),
+                            label = "playingLineHeight"
+                        )
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -897,7 +909,7 @@ private fun PlaylistDetailPage(
                                 Box(
                                     modifier = Modifier
                                         .width(3.dp)
-                                        .height(24.dp)
+                                        .height(playingLineHeight)
                                         .background(
                                             colorScheme.primary,
                                             shape = RoundedCornerShape(2.dp)
