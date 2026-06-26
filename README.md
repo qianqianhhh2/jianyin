@@ -47,6 +47,7 @@
 - **播放列表管理** - 创建、编辑、同步播放列表（支持 Bilibili 收藏夹同步）
 - **音乐下载与导入** - 支持在线下载和本地文件导入
 - **毛玻璃效果 (Haze)** - 精美的模糊视觉效果
+- **动态流光背景** - Android 13+ RuntimeShader (AGSL) 驱动的全屏播放器流光着色器背景，颜色随封面自动取色
 - **深色模式** - 完整的深色/浅色主题支持，支持跟随系统
 - **桌面歌词** - 悬浮桌面歌词服务
 - **数据备份与恢复** - 支持播放列表和设置的备份还原
@@ -109,6 +110,7 @@
 - **Konfetti 2.0.2** - `nl.dionsegijn:konfetti-compose:2.0.2` 彩纸/粒子庆祝动画
 - **Palette** - `androidx.palette:palette-ktx:1.0.0` 图片取色
 - **MaterialKolor 3.0.1** - `com.materialkolor:material-kolor:3.0.1` Material You 动态配色生成
+- **RuntimeShader (AGSL)** - Android 13+ 原生 GPU 着色器，用于全屏播放器动态流光背景
 
 ### 后台任务
 
@@ -194,6 +196,9 @@ jianyin/
 │   │   │   ├── ui/                               # UI 层
 │   │   │   │   ├── shapes/
 │   │   │   │   │   └── MaterialStarShape.kt      # Material 风格星形组件
+│   │   │   │   ├── view/
+│   │   │   │   │   ├── BgEffectPainter.kt        # AGSL 着色器管理器
+│   │   │   │   │   └── ShaderBackground.kt       # 流光着色器背景 Composable
 │   │   │   │   ├── BiliWebLoginActivity.kt       # B站网页登录页
 │   │   │   │   ├── HomeScreen.kt                 # 首页
 │   │   │   │   ├── LyricReveal.kt                # 歌词逐字显示组件（含光晕动画）
@@ -220,6 +225,8 @@ jianyin/
 │   │   │   ├── CacheManager.kt                   # 缓存管理器
 │   │   │   ├── JianYinApplication.kt             # Application 类
 │   │   │   └── PlaybackSettingsStore.kt          # 播放设置存储
+│   │   ├── assets/                               # 原生资源
+│   │   │   └── hyper_background_effect.glsl       # 流光着色器 (AGSL)
 │   │   ├── res/                                  # 资源文件
 │   │   │   ├── drawable/                         # 图片/矢量图资源
 │   │   │   ├── drawable-v24/                     # API 24+ 矢量图
