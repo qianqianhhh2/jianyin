@@ -183,12 +183,14 @@ jianyin/
 │   │   │   │   ├── MusicStatsManager.kt          # 音乐统计管理器
 │   │   │   │   └── UserStatsManager.kt           # 用户统计管理器（启动天数/常听时段）
 │   │   │   ├── playback/                         # 播放模块
+│   │   │   │   ├── AudioPlaybackService.kt       # 后台音频播放服务
 │   │   │   │   ├── BluetoothDisconnectReceiver.kt # 蓝牙断开广播接收器
+│   │   │   │   ├── BootReceiver.kt               # 开机自启动广播接收器
 │   │   │   │   ├── DesktopLyricService.kt        # 桌面歌词悬浮窗服务
+│   │   │   │   ├── Media3SessionHolder.kt        # Media3 媒体会话持有者
 │   │   │   │   ├── MediaSessionManager.kt        # 媒体会话管理器
 │   │   │   │   ├── MusicPlayerManager.kt         # 音乐播放器核心管理器
 │   │   │   │   ├── PlaybackMode.kt               # 播放模式定义
-│   │   │   │   ├── PlaybackService.kt            # 后台播放服务
 │   │   │   │   └── PlayerHolder.kt               # 播放器持有者
 │   │   │   ├── sync/                             # 同步模块
 │   │   │   │   ├── BiliPlaylistSyncManager.kt    # B站收藏夹同步管理器
@@ -210,6 +212,9 @@ jianyin/
 │   │   │   │   ├── SearchScreen.kt               # 搜索页面
 │   │   │   │   ├── Theme.kt                      # 主题定义
 │   │   │   │   └── ThemeColorUtil.kt             # 主题颜色工具
+│   │   │   ├── util/                             # 设备兼容工具
+│   │   │   │   ├── ManufacturerCompat.kt         # 厂商兼容性处理
+│   │   │   │   └── VibrationManager.kt           # 振动管理器
 │   │   │   ├── utils/                            # 工具类
 │   │   │   │   ├── HitokotoManager.kt            # 一言管理器
 │   │   │   │   ├── MaterialUtils.kt              # Material 工具
