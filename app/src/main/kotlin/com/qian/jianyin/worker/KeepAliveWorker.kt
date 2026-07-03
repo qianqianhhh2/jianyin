@@ -9,109 +9,98 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.qian.jianyin.playback.AudioPlaybackService
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 import androidx.media3.common.util.UnstableApi
 
-@UnstableApi
-
 /**
  * 保活 Worker
  *
- * 使用 WorkManager 定期检查 PlaybackService 运行状态，
- * 当服务停止时自动拉起。采用协程实现，避免线程阻塞。
+ * 每 15 分钟检查一次播放服务是否存活。
+ * 仅在用户上次正在播放时恢复服务，避免无播放时无意义保活。
  *
- * 任务间隔为 15 分钟，支持设备重启后自动恢复。
+ * 国产系统保活要点：
+ * - WorkManager 利用 AlarmManager 对齐唤醒，系统无法完全禁止
+ * - 使用 startForegroundService 直接启动前台服务
  */
+@UnstableApi
 class KeepAliveWorker(
     context: Context,
     params: WorkerParameters
 ) : CoroutineWorker(context, params) {
 
     companion object {
-        private const val WORK_NAME = "keep_alive_worker"
-        private const val CHECK_INTERVAL_MINUTES = 15L
+        private const val WORK_NAME = "jianyin_keep_alive"
+        private const val TAG = "KeepAliveWorker"
 
         /**
-         * 调度保活任务
-         *
-         * @param context 上下文
+         * 检查间隔（分钟）—— 不要太短，否则被系统判定为频繁唤醒
          */
+        private const val CHECK_INTERVAL_MINUTES = 15L
+
         fun schedule(context: Context) {
             val workRequest = PeriodicWorkRequestBuilder<KeepAliveWorker>(
                 CHECK_INTERVAL_MINUTES, TimeUnit.MINUTES
-            ).build()
+            )
+                .setInitialDelay(CHECK_INTERVAL_MINUTES, TimeUnit.MINUTES)
+                .build()
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
                 ExistingPeriodicWorkPolicy.KEEP,
                 workRequest
             )
-            Log.d("KeepAliveWorker", "保活任务已调度")
+            Log.d(TAG, "保活任务已调度，间隔: ${CHECK_INTERVAL_MINUTES}分钟")
         }
 
-        /**
-         * 取消保活任务
-         *
-         * @param context 上下文
-         */
         fun cancel(context: Context) {
             WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
-            Log.d("KeepAliveWorker", "保活任务已取消")
+            Log.d(TAG, "保活任务已取消")
         }
     }
 
-    /**
-     * 执行保活检查
-     *
-     * @return 工作结果
-     */
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        Log.d("KeepAliveWorker", "执行保活检查")
-
+        Log.d(TAG, "执行保活检查")
         val context = applicationContext
 
-        if (!isPlaybackServiceRunning(context)) {
-            Log.d("KeepAliveWorker", "PlaybackService 未运行，尝试拉起")
-            startPlaybackService(context)
+        val savedState = PlaybackStateStore.loadPlaybackState(context)
+
+        if (savedState != null && savedState.isPlaying && savedState.songs.isNotEmpty()) {
+            Log.d(TAG, "检测到播放状态，检查服务是否存活")
+
+            if (!isPlaybackServiceRunning(context)) {
+                Log.w(TAG, "播放服务已死，尝试复活")
+                startPlaybackService(context)
+            } else {
+                Log.d(TAG, "播放服务正常")
+            }
         } else {
-            Log.d("KeepAliveWorker", "PlaybackService 运行正常")
+            Log.d(TAG, "无播放状态，跳过")
         }
 
         Result.success()
     }
 
-    /**
-     * 检查 PlaybackService 是否正在运行
-     *
-     * @param context 上下文
-     * @return 是否正在运行
-     */
     private fun isPlaybackServiceRunning(context: Context): Boolean {
         val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-        return manager.getRunningServices(Integer.MAX_VALUE).any {
-            it.service.className == PlaybackService::class.java.name
+        return manager.getRunningServices(Int.MAX_VALUE).any {
+            it.service.className == AudioPlaybackService::class.java.name
         }
     }
 
-    /**
-     * 启动 PlaybackService
-     *
-     * @param context 上下文
-     */
     private fun startPlaybackService(context: Context) {
         try {
-            val intent = Intent(context, PlaybackService::class.java)
+            val intent = Intent(context, AudioPlaybackService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
                 context.startService(intent)
             }
-            Log.d("KeepAliveWorker", "PlaybackService 启动成功")
+            Log.d(TAG, "服务复活成功")
         } catch (e: Exception) {
-            Log.e("KeepAliveWorker", "启动 PlaybackService 失败", e)
+            Log.e(TAG, "服务复活失败: ${e.message}", e)
         }
     }
 }

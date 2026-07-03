@@ -2,6 +2,7 @@ package com.qian.jianyin
 
 import android.os.Bundle
 import android.net.Uri
+import android.provider.Settings
 import android.view.View
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -116,11 +117,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.BackEventCompat
 import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
 import androidx.compose.foundation.isSystemInDarkTheme
 import com.qian.jianyin.ui.view.ShaderBackground
-import android.os.VibratorManager
 import android.util.Log
 import android.app.Activity
 import android.view.Window
@@ -132,11 +130,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import android.content.Intent
-import android.provider.Settings
 import android.content.Context
 import java.io.File
 import com.qian.jianyin.OnboardingManager
 import com.qian.jianyin.OnboardingScreen
+import com.qian.jianyin.playback.AudioPlaybackService
 import com.qian.jianyin.HitokotoManager
 import com.qian.jianyin.PermissionManager
 import com.qian.jianyin.PermissionCheck
@@ -146,6 +144,7 @@ import com.qian.jianyin.VersionUpdateDialog
 import com.qian.jianyin.FirstDayDialog
 import com.qian.jianyin.DownloadSettingsStore
 import com.qian.jianyin.PlaybackSettingsStore
+import com.qian.jianyin.util.VibrationManager
 import com.qian.jianyin.ui.JianYinTheme
 import com.qian.jianyin.playback.DesktopLyricService
 import com.qian.jianyin.playback.DesktopLyricSettings
@@ -181,17 +180,21 @@ data class NavItem(
 )
 
 /**
- * 启动保活服务
- * 使用 WorkManager 调度保活任务
+ * 启动统一的音频播放服务
+ * 不再需要单独的保活 Worker —— 前台服务本身就提供了保活能力
  * @param context 上下文
  */
-@OptIn(androidx.media3.common.util.UnstableApi::class)
-private fun startKeepAliveServices(context: Context) {
+private fun startAudioPlaybackService(context: Context) {
     try {
-        KeepAliveWorker.schedule(context)
-        Log.d("MainActivity", "保活服务已启动")
+        val intent = Intent(context, AudioPlaybackService::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
+        }
+        Log.d("MainActivity", "音频播放服务已启动")
     } catch (e: Exception) {
-        Log.e("MainActivity", "启动保活服务失败", e)
+        Log.e("MainActivity", "启动音频播放服务失败", e)
     }
 }
 
@@ -391,7 +394,7 @@ class MainActivity : ComponentActivity() {
         coil.Coil.setImageLoader(imageLoader)
         
         // MediaSessionManager 由 MusicViewModel 初始化，回调在 setContent 内部设置
-        startKeepAliveServices(this)
+        startAudioPlaybackService(this)
         
         // 启动时获取一言
         lifecycleScope.launch {
@@ -406,6 +409,7 @@ class MainActivity : ComponentActivity() {
             DownloadSettingsStore.initFadeEnabled(context)
             DownloadSettingsStore.initThemeSource(context)
             DownloadSettingsStore.initSeedColor(context)
+            DownloadSettingsStore.initVibrationEnabled(context)
             val onboardingManager = remember { OnboardingManager(context) }
             val isFirstLaunch = remember { mutableStateOf(onboardingManager.isFirstLaunch()) }
             
@@ -1117,6 +1121,7 @@ fun MainScreenFramework(vm: MusicViewModel = viewModel()) {
  */
 @Composable
 fun MiniPlayerBar(vm: MusicViewModel) {
+    val context = LocalContext.current
     val song = vm.currentSong.value ?: return
     Surface(
         tonalElevation = 8.dp,
@@ -1145,11 +1150,11 @@ fun MiniPlayerBar(vm: MusicViewModel) {
                     Text(song.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, fontWeight = FontWeight.Bold)
                     Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                IconButton(onClick = { vm.previousSong() }) { Icon(Icons.Default.SkipPrevious, null) }
-                IconButton(onClick = { vm.togglePlay() }) {
+                IconButton(onClick = { vm.previousSong(); VibrationManager.mediumTap(context) }) { Icon(Icons.Default.SkipPrevious, null) }
+                IconButton(onClick = { vm.togglePlay(); VibrationManager.lightTap(context) }) {
                     Icon(imageVector = if (vm.isPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null)
                 }
-                IconButton(onClick = { vm.nextSong() }) { Icon(Icons.Default.SkipNext, null) }
+                IconButton(onClick = { vm.nextSong(); VibrationManager.mediumTap(context) }) { Icon(Icons.Default.SkipNext, null) }
             }
         }
     }
@@ -1172,7 +1177,8 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
     var showPlaybackSpeedDialog by remember { mutableStateOf(false) }
     var showPlayModeDialog by remember { mutableStateOf(false) }
     var isDownloading by remember { mutableStateOf(false) }
-    var sleepTimerTime by remember { mutableStateOf("23:00") }
+    val sleepTimerJob = remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var isSleepTimerActive by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -1443,7 +1449,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                 Spacer(Modifier.height(20.dp))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { vm.previousSong() }) { 
+                    IconButton(onClick = { vm.previousSong(); VibrationManager.mediumTap(context) }) { 
                         Icon(Icons.Default.SkipPrevious, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(44.dp)) 
                     }
                     Spacer(Modifier.width(32.dp))
@@ -1491,7 +1497,8 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                 indication = null
                             ) { 
                                 if (!isLoading) {
-                                    vm.togglePlay() 
+                                    vm.togglePlay()
+                                    VibrationManager.lightTap(context)
                                 }
                             },
                         contentAlignment = Alignment.Center
@@ -1524,7 +1531,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                     }
                     
                     Spacer(Modifier.width(32.dp))
-                    IconButton(onClick = { vm.nextSong() }) { 
+                    IconButton(onClick = { vm.nextSong(); VibrationManager.mediumTap(context) }) { 
                         Icon(Icons.Default.SkipNext, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(44.dp)) 
                     }
                 }
@@ -1701,21 +1708,30 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                             
                             var delayInMillis = (hour - currentHour) * 3600000L + (minute - currentMinute) * 60000L
                             
-                            // 如果目标时间已过，则设置为第二天
-                            if (delayInMillis < 0) {
+                            // 如果目标时间已过（或恰好等于当前时间），则设置为第二天
+                            if (delayInMillis <= 0) {
                                 delayInMillis += 24 * 3600000L
                             }
                             
-                            // 设置定时关闭
-                            scope.launch {
+                            // 取消已有的定时器，防止重复设置
+                            sleepTimerJob.value?.cancel()
+                            
+                            // 设置新的定时关闭
+                            val newJob = scope.launch {
+                                isSleepTimerActive = true
                                 kotlinx.coroutines.delay(delayInMillis)
                                 if (vm.isPlaying.value) {
                                     vm.togglePlay()
                                 }
+                                isSleepTimerActive = false
+                                sleepTimerJob.value = null
                                 Toast.makeText(context, "定时关闭已执行", Toast.LENGTH_SHORT).show()
                             }
+                            sleepTimerJob.value = newJob
+                            isSleepTimerActive = true
                             
                             Toast.makeText(context, "已设置定时关闭：$timeString", Toast.LENGTH_SHORT).show()
+                            VibrationManager.heavyTap(context)
                             showSleepTimerDialog = false
                         }) {
                             Text("确定", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
@@ -1782,6 +1798,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                                 .onSuccess { message ->
                                                     Toast.makeText(context, "下载完成: ${song.name}", Toast.LENGTH_LONG).show()
                                                     DownloadStateManager.downloadComplete()
+                                                    VibrationManager.success(context)
                                                 }
                                                 .onFailure { e ->
                                                     Toast.makeText(context, "下载失败: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -1954,7 +1971,6 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                // 定时关闭功能
                                 showSleepTimerDialog = true
                                 showMoreMenu = false
                             }
@@ -1967,21 +1983,49 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                             Icon(
                                 Icons.Default.Schedule,
                                 null,
-                                tint = MaterialTheme.colorScheme.onSurface,
+                                tint = if (isSleepTimerActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(Modifier.width(16.dp))
-                            Text(
-                                text = "定时关闭",
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Icon(
-                                Icons.Default.ArrowForwardIos,
-                                null,
-                                tint = MaterialTheme.colorScheme.onSurface.copy(0.5f),
-                                modifier = Modifier.size(16.dp)
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "定时关闭",
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                if (isSleepTimerActive) {
+                                    Text(
+                                        text = "已开启",
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                            if (isSleepTimerActive) {
+                                IconButton(
+                                    onClick = {
+                                        sleepTimerJob.value?.cancel()
+                                        sleepTimerJob.value = null
+                                        isSleepTimerActive = false
+                                        showMoreMenu = false
+                                        Toast.makeText(context, "已取消定时关闭", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        "取消定时关闭",
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(0.6f),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            } else {
+                                Icon(
+                                    Icons.Default.ArrowForwardIos,
+                                    null,
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(0.5f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                     Divider(color = MaterialTheme.colorScheme.onSurface.copy(0.2f))
@@ -2476,19 +2520,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                                         }
                                                     },
                                                     onLongPress = {
-                                                        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                                            val vibratorManager = context.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                                                            vibratorManager.defaultVibrator
-                                                        } else {
-                                                            @Suppress("DEPRECATION")
-                                                            context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as Vibrator
-                                                        }
-                                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                                            vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
-                                                        } else {
-                                                            @Suppress("DEPRECATION")
-                                                            vibrator.vibrate(50)
-                                                        }
+                                                        VibrationManager.heavyTap(context)
                                                         if (!isSelectionMode) {
                                                             isSelectionMode = true
                                                             selectedSongs = setOf(songKey)
@@ -2512,19 +2544,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                                     .pointerInput(Unit) {
                                                         detectDragGesturesAfterLongPress(
                                                             onDragStart = { offset ->
-                                                                val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                                                    val vibratorManager = context.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                                                                    vibratorManager.defaultVibrator
-                                                                } else {
-                                                                    @Suppress("DEPRECATION")
-                                                                    context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as Vibrator
-                                                                }
-                                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                                                    vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
-                                                                } else {
-                                                                    @Suppress("DEPRECATION")
-                                                                    vibrator.vibrate(50)
-                                                                }
+                                                                VibrationManager.heavyTap(context)
                                                                 draggedSongIndex = index
                                                                 originalDraggedIndex = index
                                                                 accumulatedForThreshold = 0f
@@ -2562,19 +2582,7 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                                                             .coerceIn(0, vm.playQueue.size - rangeSize)
                                                                         
                                                                         if (targetStartIndex != minSelected) {
-                                                                            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                                                                val vibratorManager = context.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                                                                                vibratorManager.defaultVibrator
-                                                                            } else {
-                                                                                @Suppress("DEPRECATION")
-                                                                                context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as Vibrator
-                                                                            }
-                                                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                                                                vibrator.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE))
-                                                                            } else {
-                                                                                @Suppress("DEPRECATION")
-                                                                                vibrator.vibrate(20)
-                                                                            }
+                                                                            VibrationManager.lightTap(context)
                                                                             
                                                                             vm.moveQueueItems(currentIndices, targetStartIndex)
                                                                             
@@ -2783,18 +2791,11 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                     
                     // 滑块
                     val context = LocalContext.current
-                    val vibrator = remember { context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator }
                     Slider(
                         value = currentSpeed.value,
                         onValueChange = { 
                             currentSpeed.value = (it * 10).toInt().toFloat() / 10.0f
-                            // 微小震动反馈
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                vibrator.vibrate(VibrationEffect.createOneShot(5, VibrationEffect.DEFAULT_AMPLITUDE))
-                            } else {
-                                @Suppress("DEPRECATION")
-                                vibrator.vibrate(5)
-                            }
+                            VibrationManager.lightTap(context)
                         },
                         valueRange = 0.25f..4.0f,
                         steps = 37, // 0.25 到 4.0，每0.1一个刻度，共38个点，steps=37

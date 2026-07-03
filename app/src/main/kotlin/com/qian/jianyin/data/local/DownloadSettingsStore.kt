@@ -27,6 +27,7 @@ object DownloadSettingsStore {
     private const val KEY_AUTO_PLAY_ON_START = "auto_play_on_start"            // 启动时播放
     private const val KEY_THEME_SOURCE = "theme_source"                         // 0: 内置配色, 1: 取色
     private const val KEY_SEED_COLOR = "seed_color"                             // 种子色 ARGB hex
+    private const val KEY_VIBRATION_ENABLED = "vibration_enabled"               // 震动开关
     // 旧版key用于迁移
     private const val KEY_CUSTOM_PATH_OLD = "custom_download_path"
 
@@ -333,5 +334,26 @@ object DownloadSettingsStore {
 
     fun setCoverColor(argb: Long) {
         _coverColorFlow.value = argb
+    }
+
+    // ========== 震动设置 ==========
+
+    private val _vibrationEnabledFlow = MutableStateFlow(true)
+    val vibrationEnabledFlow: StateFlow<Boolean> = _vibrationEnabledFlow.asStateFlow()
+
+    fun isVibrationEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_VIBRATION_ENABLED, true)
+    }
+
+    fun setVibrationEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_VIBRATION_ENABLED, enabled)
+            .apply()
+        _vibrationEnabledFlow.value = enabled
+    }
+
+    fun initVibrationEnabled(context: Context) {
+        _vibrationEnabledFlow.value = isVibrationEnabled(context)
     }
 }

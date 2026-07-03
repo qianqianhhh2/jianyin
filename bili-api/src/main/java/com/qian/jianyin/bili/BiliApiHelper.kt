@@ -2,6 +2,7 @@ package com.qian.jianyin.bili
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -182,7 +183,7 @@ class BiliClient(
         private const val FINGERPRINT_URL = "https://api.bilibili.com/x/frontend/finger/spi"
         private const val WEB_TICKET_URL = "https://api.bilibili.com/bapis/biliapi.api.ticket.v1.Ticket/GenWebTicket"
         private const val VIEW_URL = "https://api.bilibili.com/x/web-interface/view"
-        private const val SEARCH_TYPE_URL = "https://api.bilibili.com/x/web-interface/search/type"
+        private const val SEARCH_TYPE_URL = "https://api.bilibili.com/x/web-interface/wbi/search/type"
         private const val HAS_LIKE_URL = "https://api.bilibili.com/x/web-interface/archive/has/like"
         private const val FAV_FOLDER_CREATED_LIST_ALL = "https://api.bilibili.com/x/v3/fav/folder/created/list-all"
         private const val FAV_FOLDER_INFO = "https://api.bilibili.com/x/v3/fav/folder/info"
@@ -505,28 +506,66 @@ class BiliClient(
     }
 
     suspend fun searchVideos(keyword: String, page: Int = 1): SearchVideoPage {
-        val url = SEARCH_TYPE_URL.toHttpUrl().newBuilder()
-            .addQueryParameter("keyword", keyword)
-            .addQueryParameter("page", page.toString())
-            .addQueryParameter("limit", "20")
-            .addQueryParameter("search_type", "video")
-            .build()
+        val params = mutableMapOf(
+            "search_type" to "video",
+            "keyword" to keyword,
+            "page" to page.toString(),
+            "limit" to "20"
+        )
+
+        val (imgKey, subKey) = getWbiKeys()
+        Log.d(TAG, "WBI keys: imgKey=$imgKey, subKey=$subKey")
+        val mixinKey = getMixinKey(imgKey + subKey)
+        Log.d(TAG, "Mixin key: $mixinKey")
+
+        val filteredParams = params.mapValues { (_, v) -> filterValue(v) }.toMutableMap()
+        val wts = (System.currentTimeMillis() / 1000L).toString()
+        filteredParams["wts"] = wts
+        val sortedParams = filteredParams.toSortedMap()
+        val queryString = sortedParams.entries.joinToString("&") { (k, v) ->
+            "${urlEncode(k)}=${urlEncode(v)}"
+        }
+        val wbiSign = md5(queryString + mixinKey)
+        Log.d(TAG, "WBI query: $queryString, sign: $wbiSign")
+
+        val urlBuilder = SEARCH_TYPE_URL.toHttpUrl().newBuilder()
+        sortedParams.forEach { (k, v) -> urlBuilder.addQueryParameter(k, v) }
+        urlBuilder.addQueryParameter("w_rid", wbiSign)
+        val url = urlBuilder.build()
+        Log.d(TAG, "Search URL: $url")
+
+        val cookies = getEffectiveCookies()
+        Log.d(TAG, "Effective cookies: ${cookies.keys.joinToString(", ")}")
+        val cookieHeader = if (cookies.isNotEmpty()) {
+            cookies.entries.joinToString(";") { "${it.key}=${it.value}" }
+        } else ""
 
         val req = Request.Builder()
             .url(url)
             .header("User-Agent", DEFAULT_WEB_UA)
             .header("Referer", REFERER)
+            .apply {
+                if (cookieHeader.isNotEmpty()) {
+                    header("Cookie", cookieHeader)
+                }
+            }
             .build()
 
         val resp = http.newCall(req).execute()
+        val responseBody = resp.body?.string() ?: ""
         if (!resp.isSuccessful) {
-            throw IOException("Failed to search videos: ${resp.code}")
+            throw IOException("Failed to search videos: ${resp.code}, response: ${responseBody.take(500)}")
         }
 
-        val json = JSONObject(resp.body?.string() ?: "{}")
+        val json = JSONObject(responseBody)
+        val code = json.optInt("code", 0)
+        val message = json.optString("message", "")
+        if (code != 0) {
+            throw IOException("API error: code=$code, message=$message, response: ${responseBody.take(500)}")
+        }
+
         val data = json.optJSONObject("data") ?: throw IOException("Invalid search response")
-        val result = data.optJSONObject("result") ?: JSONObject()
-        val list = result.optJSONArray("list") ?: JSONArray()
+        val list = data.optJSONArray("result") ?: JSONArray()
 
         val items = mutableListOf<SearchVideoPage.SearchVideoItem>()
         for (i in 0 until list.length()) {
@@ -536,10 +575,10 @@ class BiliClient(
                     bvid = obj.optString("bvid", ""),
                     aid = obj.optLong("aid", 0),
                     cid = obj.optLong("cid", 0),
-                    title = obj.optString("title", ""),
+                    title = stripHtml(obj.optString("title", "")),
                     pic = obj.optString("pic", ""),
-                    owner = obj.optJSONObject("owner")?.optString("name", "") ?: "",
-                    duration = obj.optInt("duration", 0),
+                    owner = stripHtml(obj.optString("author", "")),
+                    duration = parseDurationToSeconds(obj.optString("duration", "0")),
                     view = obj.optInt("view", 0),
                     danmaku = obj.optInt("danmaku", 0),
                     reply = obj.optInt("reply", 0),
@@ -552,11 +591,23 @@ class BiliClient(
         }
 
         return SearchVideoPage(
-            page = page,
-            pageSize = 20,
-            total = result.optInt("numResults", 0),
+            page = data.optInt("page", page),
+            pageSize = data.optInt("pagesize", 20),
+            total = data.optInt("numResults", 0),
             items = items
         )
+    }
+
+    private fun parseDurationToSeconds(s: String?): Int {
+        if (s.isNullOrBlank()) return 0
+        val parts = s.split(':').mapNotNull { it.toIntOrNull() }
+        var total = 0
+        for (p in parts) total = total * 60 + p
+        return total
+    }
+
+    private fun stripHtml(html: String): String {
+        return html.replace(Regex("<.*?>"), "")
     }
 
     suspend fun getUserCreatedFavFolders(mid: Long): List<FavFolder> {

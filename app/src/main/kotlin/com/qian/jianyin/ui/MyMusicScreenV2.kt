@@ -5,9 +5,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.widget.Toast
@@ -76,6 +73,7 @@ import com.qian.jianyin.R
 import com.qian.jianyin.MainActivity
 import com.qian.jianyin.BuildConfig
 import com.qian.jianyin.ui.ThemeColorUtil
+import com.qian.jianyin.util.VibrationManager
 import android.app.Activity
 
 
@@ -226,10 +224,18 @@ fun MyMusicScreenV2(
         )
     }
 
+
     // 自动缓存设置
     var autoCacheEnabled by remember {
         mutableStateOf(
             DownloadSettingsStore.isAutoCacheEnabled(context)
+        )
+    }
+
+    // 震动设置
+    var vibrationEnabled by remember {
+        mutableStateOf(
+            DownloadSettingsStore.isVibrationEnabled(context)
         )
     }
 
@@ -2127,19 +2133,7 @@ fun MyMusicScreenV2(
                                                             }
                                                         },
                                                         onLongPress = {
-                                                            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                                                val vibratorManager = context.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                                                                vibratorManager.defaultVibrator
-                                                            } else {
-                                                                @Suppress("DEPRECATION")
-                                                                context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as Vibrator
-                                                            }
-                                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                                                vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
-                                                            } else {
-                                                                @Suppress("DEPRECATION")
-                                                                vibrator.vibrate(50)
-                                                            }
+                                                            VibrationManager.heavyTap(context)
                                                             if (!isSelectionMode) {
                                                                 isSelectionMode = true
                                                                 selectedSongs = setOf(index)
@@ -2248,19 +2242,7 @@ fun MyMusicScreenV2(
                                                         .pointerInput(Unit) {
                                                             detectDragGesturesAfterLongPress(
                                                                 onDragStart = { offset ->
-                                                                    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                                                        val vibratorManager = context.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                                                                        vibratorManager.defaultVibrator
-                                                                    } else {
-                                                                        @Suppress("DEPRECATION")
-                                                                        context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as Vibrator
-                                                                    }
-                                                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                                                        vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
-                                                                    } else {
-                                                                        @Suppress("DEPRECATION")
-                                                                        vibrator.vibrate(50)
-                                                                    }
+                                                                    VibrationManager.heavyTap(context)
                                                                     draggedSongIndex = index
                                                                     originalDraggedIndex = index
                                                                     accumulatedForThreshold = 0f
@@ -2295,19 +2277,7 @@ fun MyMusicScreenV2(
                                                                             .coerceIn(0, (tempSongs?.size ?: 0) - rangeSize)
                                                                         
                                                                         if (targetStartIndex != minSelected) {
-                                                                            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                                                                val vibratorManager = context.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                                                                                vibratorManager.defaultVibrator
-                                                                            } else {
-                                                                                @Suppress("DEPRECATION")
-                                                                                context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as Vibrator
-                                                                            }
-                                                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                                                                vibrator.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE))
-                                                                            } else {
-                                                                                @Suppress("DEPRECATION")
-                                                                                vibrator.vibrate(20)
-                                                                            }
+                                                                            VibrationManager.lightTap(context)
                                                                             
                                                                             // 获取要移动的歌曲
                                                                             val songsToMove = selectedSongs.sorted().map { tempSongs!![it] }
@@ -2989,6 +2959,7 @@ fun MyMusicScreenV2(
                     SettingsItem("全屏播放器设置", Icons.Default.Fullscreen, "歌词字体、亮度、屏幕常亮等", "player"),
                     SettingsItem("歌曲淡入淡出", Icons.Default.GraphicEq, "播放暂停时音量渐变", "fade"),
                     SettingsItem("自动缓存", Icons.Default.Download, "根据歌曲播放次数，自动缓存歌曲", "auto_cache"),
+                    SettingsItem("触感反馈", Icons.Default.Vibration, "按钮点击、操作完成等震动反馈", "vibration"),
                     SettingsItem("默认音乐打开方式", Icons.Default.Apps, "将本应用设为默认音乐播放器", "default_opener"),
                     SettingsItem("启动设置", Icons.Default.Power, "控制应用启动时的播放行为", "startup"),
                     SettingsItem("深色模式", Icons.Default.DarkMode, when (selectedDarkMode) {
@@ -3254,6 +3225,14 @@ fun MyMusicScreenV2(
                                                 onCheckedChange = { enabled ->
                                                     autoCacheEnabled = enabled
                                                     DownloadSettingsStore.setAutoCacheEnabled(context, enabled)
+                                                }
+                                            )
+                                        } else if (item.id == "vibration") {
+                                            Switch(
+                                                checked = vibrationEnabled,
+                                                onCheckedChange = { enabled ->
+                                                    vibrationEnabled = enabled
+                                                    DownloadSettingsStore.setVibrationEnabled(context, enabled)
                                                 }
                                             )
                                         } else if (item.id == "default_opener") {
@@ -3616,14 +3595,6 @@ fun MyMusicScreenV2(
             if (showLyricFontSizeDialog) {
                 val tempFontSize = remember { mutableStateOf(lyricFontSize) }
                 val lastFontSizeValue = remember { mutableStateOf(tempFontSize.value) }
-                val vibrator = remember {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
-                    } else {
-                        @Suppress("DEPRECATION")
-                        context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                    }
-                }
                 
                 AlertDialog(
                     onDismissRequest = { showLyricFontSizeDialog = false },
@@ -3665,12 +3636,7 @@ fun MyMusicScreenV2(
                                         // 只在档位变化时触发微振动（模拟齿轮感）
                                         if (tempFontSize.value != lastFontSizeValue.value) {
                                             lastFontSizeValue.value = tempFontSize.value
-                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                                vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK))
-                                            } else {
-                                                @Suppress("DEPRECATION")
-                                                vibrator.vibrate(10)
-                                            }
+                                            VibrationManager.tick(context)
                                         }
                                     },
                                     valueRange = 12f..32f,
@@ -3736,14 +3702,6 @@ fun MyMusicScreenV2(
             if (showGradientBrightnessDialog) {
                 val tempMultiplier = remember { mutableStateOf(gradientBrightnessMultiplier) }
                 val lastMultiplierValue = remember { mutableStateOf(tempMultiplier.value) }
-                val vibrator = remember {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
-                    } else {
-                        @Suppress("DEPRECATION")
-                        context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                    }
-                }
                 
                 AlertDialog(
                     onDismissRequest = { showGradientBrightnessDialog = false },
@@ -3772,12 +3730,7 @@ fun MyMusicScreenV2(
                                         // 只在档位变化时触发微振动（模拟齿轮感）
                                         if (tempMultiplier.value != lastMultiplierValue.value) {
                                             lastMultiplierValue.value = tempMultiplier.value
-                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                                vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK))
-                                            } else {
-                                                @Suppress("DEPRECATION")
-                                                vibrator.vibrate(10)
-                                            }
+                                            VibrationManager.tick(context)
                                         }
                                     },
                                     valueRange = 0.1f..2.0f,

@@ -33,6 +33,7 @@ data class Song(
     val url: String = "",
     val pic: String = "",
     val lrc: String? = null,
+    val album: String = "",
     val source: SongSource = SongSource.NETEASE,
     val isLocal: Boolean = false,
     val isBiliVideo: Boolean = false,
@@ -114,6 +115,7 @@ data class LrcLine(val time: Long, val text: String)
 data class PlaybackState(
     val songs: List<Song>,
     val currentIndex: Int,
+    val isPlaying: Boolean = false,
     val timestamp: Long = System.currentTimeMillis()
 )
 

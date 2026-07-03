@@ -47,7 +47,7 @@ object NeteaseApiService {
     }
 
     suspend fun searchSongs(keyword: String, limit: Int = 30, offset: Int = 0): List<NeteaseSongSearchResult> = withContext(Dispatchers.IO) {
-        val response = client.searchSongs(keyword, limit, offset, usePersistedCookies = true)
+        val response = client.searchSongs(keyword, limit, offset, usePersistedCookies = isLoggedIn)
         parseSearchResult(response)
     }
 

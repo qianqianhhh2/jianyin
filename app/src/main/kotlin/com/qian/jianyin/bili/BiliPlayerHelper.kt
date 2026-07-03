@@ -1,6 +1,7 @@
 package com.qian.jianyin
 
 import android.content.Context
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -21,8 +22,24 @@ object BiliPlayerHelper {
         val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
         val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
 
-        return ExoPlayer.Builder(context)
+        val player = ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaSourceFactory)
             .build()
+
+        // 关闭音频卸载 —— 国产系统魔改的音频 HAL 层容易导致卸载后无法恢复
+        val audioOffload = TrackSelectionParameters.AudioOffloadPreferences.Builder()
+            .setAudioOffloadMode(
+                TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
+            )
+            .build()
+        player.trackSelectionParameters = player.trackSelectionParameters
+            .buildUpon()
+            .setAudioOffloadPreferences(audioOffload)
+            .build()
+
+        // 设置 WakeMode 为 NETWORK —— 播放时自动保持 CPU 唤醒
+        player.setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
+
+        return player
     }
 }

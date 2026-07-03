@@ -24,7 +24,7 @@ private fun getRandomPlaceholderId(): Int {
 }
 
 @Composable
-fun MiniPlayer(song: Song, isPlaying: Boolean, onTogglePlay: () -> Unit) {
+fun MiniPlayer(song: Song, isPlaying: Boolean, onTogglePlay: () -> Unit, onSkipNext: () -> Unit) {
     Surface(
         // MD3 的 tonalElevation，会根据系统动态颜色产生色调
         tonalElevation = 6.dp,
@@ -59,7 +59,7 @@ fun MiniPlayer(song: Song, isPlaying: Boolean, onTogglePlay: () -> Unit) {
             IconButton(onClick = onTogglePlay) {
                 Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "播放/暂停")
             }
-            IconButton(onClick = { /* TODO: 下一首 */ }) {
+            IconButton(onClick = onSkipNext) {
                 Icon(Icons.Default.SkipNext, contentDescription = "下一首")
             }
         }

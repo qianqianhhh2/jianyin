@@ -38,6 +38,12 @@
     <!-- 悬浮窗权限（Android 6.0+） -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- WakeLock 保活 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- 电池优化白名单 -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <application
         android:name=".JianYinApplication"
         android:allowBackup="true"
@@ -86,17 +92,21 @@
             </intent-filter>
         </receiver>
 
-        <!-- 播放服务 -->
+        <!-- 开机启动接收器 -->
+        <receiver android:name=".playback.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 统一音频播放服务（前台保活 + MediaSession + 媒体控制通知） -->
         <service
-            android:name=".PlaybackService"
+            android:name=".playback.AudioPlaybackService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback">
-            <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
-                <action android:name="androidx.media3.session.MediaSessionService" />
-            </intent-filter>
-        </service>
+            android:stopWithTask="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- B站网页登录 -->
         <activity

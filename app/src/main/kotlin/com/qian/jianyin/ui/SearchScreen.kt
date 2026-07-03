@@ -56,7 +56,14 @@ fun SearchScreen(
     var createPlaylistName by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
-    // 页面背景适配动态色
+    fun performSearch(query: String) {
+        vm.executeMultiSourceSearch(query, saveHistory = true)
+    }
+
+    fun performSearchWithoutHistory(query: String) {
+        vm.executeMultiSourceSearch(query, saveHistory = false)
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -67,27 +74,26 @@ fun SearchScreen(
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.statusBars)
         ) {
-            // 1. 搜索框：适配 M3 OutlinedTextField 风格
             OutlinedTextField(
                 value = searchText,
                 onValueChange = { 
                     searchText = it
                     if (it.isNotEmpty()) {
-                        vm.searchWithoutHistory(it)
+                        performSearchWithoutHistory(it)
                     } else {
                         vm.clearSearchResults()
                     }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp, 8.dp), // 减小底部padding，缩小与搜索历史的间隙
+                    .padding(16.dp, 8.dp),
                 placeholder = { Text("搜索音乐/歌手", color = colorScheme.onSurfaceVariant) },
                 shape = RoundedCornerShape(28.dp),
                 leadingIcon = { Icon(Icons.Default.Search, null, tint = colorScheme.onSurfaceVariant) },
                 trailingIcon = {
                     if (searchText.isNotEmpty()) {
                         IconButton(onClick = { 
-                            vm.executeSearch(searchText)
+                            performSearch(searchText)
                             focusManager.clearFocus()
                         }) {
                             Icon(Icons.Default.Send, null, tint = colorScheme.primary)
@@ -107,7 +113,7 @@ fun SearchScreen(
                 ),
                 keyboardActions = KeyboardActions(
                     onSearch = {
-                        vm.executeSearch(searchText)
+                        performSearch(searchText)
                         focusManager.clearFocus()
                     }
                 )
@@ -153,7 +159,7 @@ fun SearchScreen(
                                 vm.searchHistory.forEach { history ->
                                     SuggestionTagV2(history, colorScheme) {
                                         searchText = it
-                                        vm.executeSearch(it)
+                                        vm.executeMultiSourceSearch(it)
                                     }
                                 }
                             }
@@ -177,7 +183,7 @@ fun SearchScreen(
                             vm.recommendedSearches.forEach { tag ->
                                 SuggestionTagV2(tag, colorScheme) {
                                     searchText = it
-                                    vm.executeSearch(it)
+                                    vm.executeMultiSourceSearch(it)
                                 }
                             }
                         }
@@ -360,7 +366,11 @@ fun SearchScreen(
                                             error = painterResource(id = getRandomPlaceholderId())
                                         )
                                         Column(Modifier.padding(start = if (isSelectionMode) 12.dp else 16.dp).weight(1f)) {
-                                            Text(song.name, color = colorScheme.onBackground, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(song.name, color = colorScheme.onBackground, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                SourceBadge(song.source, colorScheme)
+                                            }
                                             Text(song.artist, color = colorScheme.onSurfaceVariant, fontSize = 13.sp, maxLines = 1)
                                         }
                                     }
@@ -592,5 +602,21 @@ fun SongItemViewV2(song: Song, cs: ColorScheme, onClick: () -> Unit) {
             thickness = 0.5.dp,
             color = cs.outlineVariant // 动态分割线颜色
         )
+    }
+}
+
+@Composable
+fun SourceBadge(source: SongSource, cs: ColorScheme) {
+    val badgeText = when (source) {
+        SongSource.NETEASE -> "NetEase"
+        SongSource.BILI -> "Bilibili"
+        SongSource.LOCAL -> "Local"
+        SongSource.QQ -> "QQMusic"
+    }
+    Badge(
+        containerColor = cs.primaryContainer,
+        contentColor = cs.onPrimaryContainer
+    ) {
+        Text(badgeText, fontSize = 10.sp)
     }
 }
