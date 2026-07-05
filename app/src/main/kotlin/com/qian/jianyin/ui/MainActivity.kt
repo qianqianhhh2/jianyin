@@ -1393,6 +1393,14 @@ fun FullPlayerScreen(vm: MusicViewModel, refreshPlaylistTrigger: (() -> Unit)? =
                                                         .padding(8.dp)
                                                 )
                                             }
+                                            // 试听片段标识
+                                            if (song.isPreview) {
+                                                PreviewBadge(
+                                                    modifier = Modifier
+                                                        .align(Alignment.BottomEnd)
+                                                        .padding(8.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 } else {
@@ -2981,6 +2989,17 @@ fun MultiPageTaijiBadge(
         modifier = modifier
     ) {
         Text("P$pageIndex/$pageCount", fontSize = 11.sp)
+    }
+}
+
+@Composable
+fun PreviewBadge(modifier: Modifier = Modifier) {
+    Badge(
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        modifier = modifier
+    ) {
+        Text("试听", fontSize = 11.sp)
     }
 }
 

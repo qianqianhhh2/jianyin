@@ -28,6 +28,7 @@ object DownloadSettingsStore {
     private const val KEY_THEME_SOURCE = "theme_source"                         // 0: 内置配色, 1: 取色
     private const val KEY_SEED_COLOR = "seed_color"                             // 种子色 ARGB hex
     private const val KEY_VIBRATION_ENABLED = "vibration_enabled"               // 震动开关
+    private const val KEY_BACKUP_AUDIO_API_URL = "backup_audio_api_url"         // 备用音源API地址
     // 旧版key用于迁移
     private const val KEY_CUSTOM_PATH_OLD = "custom_download_path"
 
@@ -355,5 +356,16 @@ object DownloadSettingsStore {
 
     fun initVibrationEnabled(context: Context) {
         _vibrationEnabledFlow.value = isVibrationEnabled(context)
+    }
+
+    fun getBackupAudioApiUrl(context: Context): String {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_BACKUP_AUDIO_API_URL, "") ?: ""
+    }
+
+    fun setBackupAudioApiUrl(context: Context, url: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putString(KEY_BACKUP_AUDIO_API_URL, url.trim())
+            .apply()
     }
 }

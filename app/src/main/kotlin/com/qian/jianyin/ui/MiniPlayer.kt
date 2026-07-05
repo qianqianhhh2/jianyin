@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.qian.jianyin.R
 import androidx.compose.ui.res.painterResource
@@ -53,7 +54,22 @@ fun MiniPlayer(song: Song, isPlaying: Boolean, onTogglePlay: () -> Unit, onSkipN
                     .padding(horizontal = 12.dp)
             ) {
                 Text(song.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
-                Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    if (song.isPreview) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Badge(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(vertical = 1.dp)
+                        ) {
+                            Text("试听", fontSize = 9.sp)
+                        }
+                    }
+                }
             }
             // 播放/暂停/切歌
             IconButton(onClick = onTogglePlay) {

@@ -44,7 +44,8 @@ data class Song(
     val pageIndex: Int = 0,                  // 当前是第几p（从1开始）
     val pageCount: Int = 0,                  // 总共有多少p
     val pageName: String = "",               // 当前p的名称（小标题）
-    val parentBvid: String = ""              // 父视频的bvid（用于关联同一视频的所有分p）
+    val parentBvid: String = "",             // 父视频的bvid（用于关联同一视频的所有分p）
+    val isPreview: Boolean = false           // 是否为试听片段
 ) {
     companion object {
         fun detectSource(song: Song): SongSource {

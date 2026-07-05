@@ -246,6 +246,14 @@ fun MyMusicScreenV2(
         )
     }
 
+    // 备用音源设置相关状态
+    var showBackupAudioDialog by remember { mutableStateOf(false) }
+    var backupAudioApiUrl by remember {
+        mutableStateOf(
+            DownloadSettingsStore.getBackupAudioApiUrl(context)
+        )
+    }
+
     // 深色模式设置相关状态
     var showDarkModeDialog by remember { mutableStateOf(false) }
     var selectedDarkMode by remember {
@@ -2791,6 +2799,16 @@ fun MyMusicScreenV2(
                                                         pageCount = song.pageCount
                                                     )
                                                 }
+                                                // 试听标识
+                                                if (song.isPreview) {
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Badge(
+                                                        containerColor = colorScheme.primaryContainer,
+                                                        contentColor = colorScheme.onPrimaryContainer
+                                                    ) {
+                                                        Text("试听", fontSize = 10.sp)
+                                                    }
+                                                }
                                             }
                                         }
                                         // 非选择模式下显示播放按钮
@@ -2951,33 +2969,44 @@ fun MyMusicScreenV2(
                 var showSearchBar by remember { mutableStateOf(false) }
                 var searchQuery by remember { mutableStateOf("") }
 
-                val allSettingsItems = listOf(
-                    SettingsItem("账号管理", Icons.Default.ManageAccounts, "管理网易云和B站账号", "account"),
-                    SettingsItem("下载位置设置", Icons.Default.Folder, "设置下载文件保存路径", "folder"),
-                    SettingsItem("音质设置", Icons.Default.MusicNote, "下载和播放音质选项", "quality"),
-                    SettingsItem("本地音乐歌词来源", Icons.Default.LibraryMusic, if (selectedLyricSource == 0) "内嵌" else "网络", "lyric"),
-                    SettingsItem("全屏播放器设置", Icons.Default.Fullscreen, "歌词字体、亮度、屏幕常亮等", "player"),
-                    SettingsItem("歌曲淡入淡出", Icons.Default.GraphicEq, "播放暂停时音量渐变", "fade"),
-                    SettingsItem("自动缓存", Icons.Default.Download, "根据歌曲播放次数，自动缓存歌曲", "auto_cache"),
-                    SettingsItem("触感反馈", Icons.Default.Vibration, "按钮点击、操作完成等震动反馈", "vibration"),
-                    SettingsItem("默认音乐打开方式", Icons.Default.Apps, "将本应用设为默认音乐播放器", "default_opener"),
-                    SettingsItem("启动设置", Icons.Default.Power, "控制应用启动时的播放行为", "startup"),
-                    SettingsItem("深色模式", Icons.Default.DarkMode, when (selectedDarkMode) {
-                        0 -> "跟随系统"
-                        1 -> "浅色"
-                        2 -> "深色"
-                        else -> "跟随系统"
-                    }, "dark"),
-                    SettingsItem("主题色", Icons.Default.Palette, when (selectedThemeSource) {
-                        0 -> "内置配色"
-                        1 -> "壁纸取色"
-                        2 -> "专辑封面"
-                        3 -> "用户自定义"
-                        else -> "内置配色"
-                    }, "theme"),
-                    SettingsItem("备份与恢复", Icons.Default.Backup, "数据备份与恢复", "backup"),
-                    SettingsItem("关于", Icons.Default.Info, "应用信息", "about")
-                )
+                val backupAudioStatus by remember {
+                    derivedStateOf {
+                        if (backupAudioApiUrl.isBlank()) "未设置" else "已设置"
+                    }
+                }
+
+                val allSettingsItems by remember {
+                    derivedStateOf {
+                        listOf(
+                            SettingsItem("账号管理", Icons.Default.ManageAccounts, "管理网易云和B站账号", "account"),
+                            SettingsItem("下载位置设置", Icons.Default.Folder, "设置下载文件保存路径", "folder"),
+                            SettingsItem("音质设置", Icons.Default.MusicNote, "下载和播放音质选项", "quality"),
+                            SettingsItem("本地音乐歌词来源", Icons.Default.LibraryMusic, if (selectedLyricSource == 0) "内嵌" else "网络", "lyric"),
+                            SettingsItem("全屏播放器设置", Icons.Default.Fullscreen, "歌词字体、亮度、屏幕常亮等", "player"),
+                            SettingsItem("歌曲淡入淡出", Icons.Default.GraphicEq, "播放暂停时音量渐变", "fade"),
+                            SettingsItem("自动缓存", Icons.Default.Download, "根据歌曲播放次数，自动缓存歌曲", "auto_cache"),
+                            SettingsItem("触感反馈", Icons.Default.Vibration, "按钮点击、操作完成等震动反馈", "vibration"),
+                            SettingsItem("默认音乐打开方式", Icons.Default.Apps, "将本应用设为默认音乐播放器", "default_opener"),
+                            SettingsItem("备用音源", Icons.Default.Link, backupAudioStatus, "backup_audio"),
+                            SettingsItem("启动设置", Icons.Default.Power, "控制应用启动时的播放行为", "startup"),
+                            SettingsItem("深色模式", Icons.Default.DarkMode, when (selectedDarkMode) {
+                                0 -> "跟随系统"
+                                1 -> "浅色"
+                                2 -> "深色"
+                                else -> "跟随系统"
+                            }, "dark"),
+                            SettingsItem("主题色", Icons.Default.Palette, when (selectedThemeSource) {
+                                0 -> "内置配色"
+                                1 -> "壁纸取色"
+                                2 -> "专辑封面"
+                                3 -> "用户自定义"
+                                else -> "内置配色"
+                            }, "theme"),
+                            SettingsItem("备份与恢复", Icons.Default.Backup, "数据备份与恢复", "backup"),
+                            SettingsItem("关于", Icons.Default.Info, "应用信息", "about")
+                        )
+                    }
+                }
 
                 val filteredItems by remember {
                     derivedStateOf {
@@ -3270,6 +3299,10 @@ fun MyMusicScreenV2(
                                                 showThemeDialog = true
                                             }
                                             "startup" -> showStartupSettingsDialog = true
+                                            "backup_audio" -> {
+                                                backupAudioApiUrl = DownloadSettingsStore.getBackupAudioApiUrl(context)
+                                                showBackupAudioDialog = true
+                                            }
                                             "backup" -> showBackupDialog = true
                                             "about" -> showAboutScreen = true
                                         }
@@ -3284,6 +3317,60 @@ fun MyMusicScreenV2(
                         }
                     }
                 }
+            }
+
+            // 备用音源设置对话框
+            if (showBackupAudioDialog) {
+                AlertDialog(
+                    onDismissRequest = { showBackupAudioDialog = false },
+                    title = { Text("备用音源设置（实验性功能）") },
+                    text = {
+                        Column {
+                            Text("当官方音源无法播放时，将使用备用音源。", fontSize = 13.sp, color = colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            OutlinedTextField(
+                                value = backupAudioApiUrl,
+                                onValueChange = { backupAudioApiUrl = it },
+                                label = { Text("输入API 地址") },
+                                placeholder = { Text("请自行获取") },
+                                singleLine = true
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "依照meting-api格式解析，实验性功能，可能不稳定",
+                                fontSize = 11.sp,
+                                color = colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (backupAudioApiUrl.isNotBlank()) {
+                                TextButton(onClick = {
+                                    backupAudioApiUrl = ""
+                                    DownloadSettingsStore.setBackupAudioApiUrl(context, "")
+                                    showBackupAudioDialog = false
+                                    Toast.makeText(context, "已清除备用音源", Toast.LENGTH_SHORT).show()
+                                }) {
+                                    Text("清除")
+                                }
+                            }
+                            TextButton(onClick = {
+                                DownloadSettingsStore.setBackupAudioApiUrl(context, backupAudioApiUrl)
+                                showBackupAudioDialog = false
+                                Toast.makeText(context, "设置已保存", Toast.LENGTH_SHORT).show()
+                            }) {
+                                Text("保存")
+                            }
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showBackupAudioDialog = false }) {
+                            Text("取消")
+                        }
+                    },
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
             }
 
             // 下载路径设置对话框

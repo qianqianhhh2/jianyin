@@ -959,12 +959,23 @@ private fun PlaylistDetailPage(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Text(
-                                    song.artist,
-                                    color = colorScheme.onSurfaceVariant,
-                                    fontSize = 12.sp,
-                                    maxLines = 1
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        song.artist,
+                                        color = colorScheme.onSurfaceVariant,
+                                        fontSize = 12.sp,
+                                        maxLines = 1
+                                    )
+                                    if (song.isPreview) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Badge(
+                                            containerColor = colorScheme.primaryContainer,
+                                            contentColor = colorScheme.onPrimaryContainer
+                                        ) {
+                                            Text("试听", fontSize = 10.sp)
+                                        }
+                                    }
+                                }
                             }
                             if (!isSelectionMode) {
                                 Icon(

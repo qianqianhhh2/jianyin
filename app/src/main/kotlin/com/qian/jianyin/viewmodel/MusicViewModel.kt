@@ -16,6 +16,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -25,10 +26,18 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import org.json.JSONArray
 import org.json.JSONObject
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import java.util.concurrent.TimeUnit
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.converter.scalars.ScalarsConverterFactory
+import retrofit2.http.GET
+import retrofit2.http.Url
 import com.qian.jianyin.bili.BiliApi
 import com.qian.jianyin.bili.BiliWebLoginHelper
 import com.qian.jianyin.bili.BiliAudioStreamInfo
@@ -269,6 +278,29 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         }
 
                         Log.d("MusicVM", "歌曲已准备好，时长: $duration")
+                    }
+                }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                Log.e("MusicVM", "播放错误: ${error.errorCodeName}")
+                currentSong.value?.let { song ->
+                    if (song.source == SongSource.NETEASE) {
+                        val backupApiUrl = DownloadSettingsStore.getBackupAudioApiUrl(getApplication())
+                        if (backupApiUrl.isNotBlank()) {
+                            Log.d("MusicVM", "播放失败，尝试备用音源: ${song.name}")
+                            viewModelScope.launch {
+                                val backupUrl = fetchBackupAudioUrl(song.id, backupApiUrl)
+                                if (backupUrl.isNotBlank()) {
+                                    Log.d("MusicVM", "备用音源获取成功，重新播放: ${song.name}")
+                                    val updatedSong = song.copy(url = backupUrl, isPreview = false)
+                                    currentSong.value = updatedSong
+                                    playSong(updatedSong)
+                                } else {
+                                    Log.e("MusicVM", "备用音源获取失败: ${song.name}")
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1112,14 +1144,29 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 return song.copy(url = "file://$cachedMp3Path")
             }
             
-            // 从网络获取URL
             val qualityLevel = DownloadSettingsStore.getPlayQuality(context)
             Log.d("MusicVM", "fetchNeteaseSongUrl: 开始获取URL，songId=${song.id}, quality=$qualityLevel")
-            val url = NeteaseApiService.getSongUrl(song.id, qualityLevel)
-            Log.d("MusicVM", "fetchNeteaseSongUrl: 获取结果，url=${url ?: "null"}")
+            val playbackInfo = NeteaseApiService.getSongUrl(song.id, qualityLevel)
+            Log.d("MusicVM", "fetchNeteaseSongUrl: 获取结果，url=${playbackInfo.url ?: "null"}, isPreview=${playbackInfo.isPreview}")
+            var url = playbackInfo.url
+            
+            val backupApiUrl = DownloadSettingsStore.getBackupAudioApiUrl(context)
+            val needBackup = (url == null || playbackInfo.isPreview) && backupApiUrl.isNotBlank()
+            
+            if (needBackup) {
+                Log.d("MusicVM", "fetchNeteaseSongUrl: 需要备用音源，url=${url != null}, isPreview=${playbackInfo.isPreview}: ${song.name}")
+                val backupUrl = fetchBackupAudioUrl(song.id, backupApiUrl)
+                if (backupUrl.isNotBlank()) {
+                    Log.d("MusicVM", "fetchNeteaseSongUrl: 备用音源获取成功: ${song.name}")
+                    return song.copy(url = backupUrl, isPreview = false)
+                } else {
+                    Log.d("MusicVM", "fetchNeteaseSongUrl: 备用音源获取失败: ${song.name}")
+                }
+            }
+            
             if (url != null) {
-                Log.d("MusicVM", "fetchNeteaseSongUrl: 成功获取URL: ${song.name}")
-                song.copy(url = url)
+                Log.d("MusicVM", "fetchNeteaseSongUrl: 成功获取URL: ${song.name}, isPreview=${playbackInfo.isPreview}")
+                return song.copy(url = url, isPreview = playbackInfo.isPreview)
             } else {
                 Log.e("MusicVM", "fetchNeteaseSongUrl: 获取URL失败，返回null: ${song.name}")
                 song
@@ -1127,6 +1174,81 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             Log.e("MusicVM", "fetchNeteaseSongUrl: 获取网易云歌曲URL异常: ${song.id}", e)
             song
+        }
+    }
+
+    private suspend fun fetchBackupAudioUrl(songId: String, backupApiUrl: String): String {
+        val baseUrl = if (backupApiUrl.endsWith("/")) backupApiUrl else "$backupApiUrl/"
+        val requestUrl = "${baseUrl}?type=song&id=$songId&br=320"
+        Log.d("MusicVM", "fetchBackupAudioUrl: 请求备用音源: $requestUrl")
+        
+        val client = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+        
+        val request = Request.Builder()
+            .url(requestUrl)
+            .build()
+        
+        return suspendCancellableCoroutine { continuation ->
+            client.newCall(request).enqueue(object : okhttp3.Callback {
+                override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                    try {
+                        if (!response.isSuccessful) {
+                            Log.e("MusicVM", "fetchBackupAudioUrl: 请求失败，状态码: ${response.code}")
+                            continuation.resume("")
+                            return
+                        }
+                        
+                        val contentType = response.header("Content-Type", "") ?: ""
+                        Log.d("MusicVM", "fetchBackupAudioUrl: Content-Type: $contentType")
+                        
+                        if (contentType.contains("application/json") || contentType.contains("text/")) {
+                            val body = response.body?.string() ?: ""
+                            Log.d("MusicVM", "fetchBackupAudioUrl: 响应内容: ${body.take(500)}")
+                            
+                            try {
+                                val jsonArray = JSONArray(body)
+                                if (jsonArray.length() > 0) {
+                                    val firstObj = jsonArray.getJSONObject(0)
+                                    val audioUrl = firstObj.optString("url", "")
+                                    if (audioUrl.isNotBlank()) {
+                                        Log.d("MusicVM", "fetchBackupAudioUrl: JSON解析获取到音频URL: $audioUrl")
+                                        continuation.resume(audioUrl)
+                                        return
+                                    }
+                                }
+                            } catch (jsonE: Exception) {
+                                Log.d("MusicVM", "fetchBackupAudioUrl: JSON解析失败，尝试作为音频URL处理")
+                            }
+                        }
+                        
+                        val finalUrl = response.request.url.toString()
+                        Log.d("MusicVM", "fetchBackupAudioUrl: 直接使用请求URL作为音频源: $finalUrl")
+                        continuation.resume(finalUrl)
+                    } catch (e: Exception) {
+                        Log.e("MusicVM", "fetchBackupAudioUrl: 处理响应失败", e)
+                        continuation.resume("")
+                    } finally {
+                        response.close()
+                    }
+                }
+                
+                override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                    Log.e("MusicVM", "fetchBackupAudioUrl: 请求备用音源失败", e)
+                    continuation.resume("")
+                }
+            })
+            
+            continuation.invokeOnCancellation {
+                try {
+                    client.dispatcher.cancelAll()
+                } catch (_: Exception) {
+                }
+            }
         }
     }
 

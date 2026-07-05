@@ -157,18 +157,18 @@ object NeteaseApiService {
      * 获取播放 URL，自动从首选音质向下降级尝试。
      * @param qualityLevel 首选音质，如 "exhigh"、"lossless" 等
      */
-    suspend fun getSongUrl(songId: String, qualityLevel: String = "exhigh"): String? = withContext(Dispatchers.IO) {
+    suspend fun getSongUrl(songId: String, qualityLevel: String = "exhigh"): PlaybackUrlInfo = withContext(Dispatchers.IO) {
         val candidates = buildQualityCandidates(qualityLevel)
         for ((index, quality) in candidates.withIndex()) {
             try {
                 android.util.Log.d("NeteaseApi", "getSongUrl: songId=$songId, trying quality=$quality")
                 val response = client.getSongDownloadUrl(songId.toLong(), quality)
-                val url = parsePlaybackUrl(response)
-                if (url != null) {
+                val playbackInfo = parsePlaybackUrlInfo(response)
+                if (playbackInfo.url != null) {
                     if (index > 0) {
                         android.util.Log.w("NeteaseApi", "getSongUrl: 音质降级 $qualityLevel -> $quality")
                     }
-                    return@withContext url
+                    return@withContext playbackInfo
                 }
                 // 需要登录，不重试
                 if (isRequiresLogin(response)) break
@@ -177,12 +177,17 @@ object NeteaseApiService {
             }
         }
         android.util.Log.e("NeteaseApi", "getSongUrl: 所有音质均不可用")
-        null
+        PlaybackUrlInfo(null)
     }
 
     data class DownloadUrlInfo(
         val url: String,
         val type: String
+    )
+
+    data class PlaybackUrlInfo(
+        val url: String?,
+        val isPreview: Boolean = false
     )
 
     suspend fun getSongDownloadUrl(songId: String, level: String = "lossless"): DownloadUrlInfo? = withContext(Dispatchers.IO) {
@@ -210,20 +215,33 @@ object NeteaseApiService {
 
     /** 从播放响应中提取 URL，处理 JSONObject.NULL 等情况 */
     private fun parsePlaybackUrl(rawResponse: String): String? {
+        return parsePlaybackUrlInfo(rawResponse).url
+    }
+
+    /** 从播放响应中提取 URL 和试听标记，参考 NeriPlayer 实现 */
+    private fun parsePlaybackUrlInfo(rawResponse: String): PlaybackUrlInfo {
         return try {
             val root = JSONObject(rawResponse)
             when (root.optInt("code", -1)) {
                 200 -> {
-                    val data = extractDataObject(root) ?: return null
-                    val url = optCleanString(data, "url") ?: return null
-                    url
+                    val data = extractDataObject(root) ?: return PlaybackUrlInfo(null)
+                    val url = optCleanString(data, "url") ?: return PlaybackUrlInfo(null)
+                    val isPreview = isPreviewClip(data)
+                    android.util.Log.d("NeteaseApi", "parsePlaybackUrlInfo: url=$url, isPreview=$isPreview")
+                    PlaybackUrlInfo(url, isPreview)
                 }
-                else -> null
+                else -> PlaybackUrlInfo(null)
             }
         } catch (e: Exception) {
-            android.util.Log.e("NeteaseApi", "parsePlaybackUrl: 解析异常", e)
-            null
+            android.util.Log.e("NeteaseApi", "parsePlaybackUrlInfo: 解析异常", e)
+            PlaybackUrlInfo(null)
         }
+    }
+
+    /** 判断是否为试听片段 */
+    private fun isPreviewClip(data: JSONObject): Boolean {
+        val freeTrialInfo = data.opt("freeTrialInfo")
+        return freeTrialInfo != null && freeTrialInfo != JSONObject.NULL
     }
 
     private fun isRequiresLogin(rawResponse: String): Boolean {
