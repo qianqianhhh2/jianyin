@@ -19,9 +19,10 @@ import com.qian.jianyin.R
 import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.remember
 
-private fun getRandomPlaceholderId(): Int {
-    val ids = listOf(R.drawable.miku_1, R.drawable.miku_2, R.drawable.miku_3, R.drawable.miku_4, R.drawable.miku_5, R.drawable.miku_6, R.drawable.miku_7, R.drawable.miku_8, R.drawable.miku_9)
-    return ids.random()
+private val placeholderIds = listOf(R.drawable.miku_1, R.drawable.miku_2, R.drawable.miku_3, R.drawable.miku_4, R.drawable.miku_5, R.drawable.miku_6, R.drawable.miku_7, R.drawable.miku_8, R.drawable.miku_9)
+
+private fun getPlaceholderId(index: Int): Int {
+    return placeholderIds[(index and Int.MAX_VALUE) % placeholderIds.size]
 }
 
 @Composable
@@ -40,7 +41,7 @@ fun MiniPlayer(song: Song, isPlaying: Boolean, onTogglePlay: () -> Unit, onSkipN
             verticalAlignment = Alignment.CenterVertically
         ) {
             // 封面
-            val mikuPainter = painterResource(id = getRandomPlaceholderId())
+            val mikuPainter = painterResource(id = getPlaceholderId((song.id ?: song.url).hashCode()))
             AsyncImage(
                 model = song.pic,
                 contentDescription = null,

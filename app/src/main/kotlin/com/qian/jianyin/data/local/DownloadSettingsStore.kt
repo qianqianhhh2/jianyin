@@ -29,6 +29,7 @@ object DownloadSettingsStore {
     private const val KEY_SEED_COLOR = "seed_color"                             // 种子色 ARGB hex
     private const val KEY_VIBRATION_ENABLED = "vibration_enabled"               // 震动开关
     private const val KEY_BACKUP_AUDIO_API_URL = "backup_audio_api_url"         // 备用音源API地址
+    private const val KEY_HAZE_EFFECT_ENABLED = "haze_effect_enabled"         // Haze效果开关
     // 旧版key用于迁移
     private const val KEY_CUSTOM_PATH_OLD = "custom_download_path"
 
@@ -366,6 +367,17 @@ object DownloadSettingsStore {
     fun setBackupAudioApiUrl(context: Context, url: String) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putString(KEY_BACKUP_AUDIO_API_URL, url.trim())
+            .apply()
+    }
+
+    fun isHazeEffectEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_HAZE_EFFECT_ENABLED, true)
+    }
+
+    fun setHazeEffectEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_HAZE_EFFECT_ENABLED, enabled)
             .apply()
     }
 }

@@ -97,14 +97,15 @@ fun SectionHeaderV6(title: String, icon: androidx.compose.ui.graphics.vector.Ima
     }
 }
 
-private fun getRandomPlaceholderId(): Int {
-    val ids = listOf(R.drawable.miku_1, R.drawable.miku_2, R.drawable.miku_3, R.drawable.miku_4, R.drawable.miku_5, R.drawable.miku_6, R.drawable.miku_7, R.drawable.miku_8, R.drawable.miku_9)
-    return ids.random()
+private val placeholderIds = listOf(R.drawable.miku_1, R.drawable.miku_2, R.drawable.miku_3, R.drawable.miku_4, R.drawable.miku_5, R.drawable.miku_6, R.drawable.miku_7, R.drawable.miku_8, R.drawable.miku_9)
+
+private fun getPlaceholderId(index: Int): Int {
+    return placeholderIds[(index and Int.MAX_VALUE) % placeholderIds.size]
 }
 
 @Composable
 fun SongItemV6(song: Song, cs: ColorScheme, onClick: () -> Unit) {
-    val mikuPainter = painterResource(id = getRandomPlaceholderId())
+    val mikuPainter = painterResource(id = getPlaceholderId((song.id ?: song.url).hashCode()))
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
         AsyncImage(model = song.pic, contentDescription = null, modifier = Modifier.size(54.dp).clip(RoundedCornerShape(10.dp)).background(cs.surfaceVariant), contentScale = ContentScale.Crop, error = mikuPainter)
         Column(Modifier.padding(start = 16.dp).weight(1f)) {
@@ -129,7 +130,7 @@ fun SongItemV6(song: Song, cs: ColorScheme, onClick: () -> Unit) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PlaylistItemV6(playlist: UserSyncedPlaylist, colorScheme: ColorScheme, onClick: () -> Unit, onLongClick: () -> Unit) {
-    val mikuPainter = painterResource(id = getRandomPlaceholderId())
+    val mikuPainter = painterResource(id = getPlaceholderId(playlist.id.hashCode()))
     val coverModel = playlist.coverPic.ifBlank { null }
     Row(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         if (coverModel != null) {
@@ -243,6 +244,13 @@ fun MyMusicScreenV2(
     var defaultOpenerEnabled by remember {
         mutableStateOf(
             DownloadSettingsStore.isDefaultMusicOpenerEnabled(context)
+        )
+    }
+
+    // Haze效果开关
+    var hazeEffectEnabled by remember {
+        mutableStateOf(
+            DownloadSettingsStore.isHazeEffectEnabled(context)
         )
     }
 
@@ -470,7 +478,8 @@ fun MyMusicScreenV2(
                             Spacer(Modifier.height(12.dp))
 
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                items(previewSongs) { song ->
+                                itemsIndexed(previewSongs, key = { _, song -> song.id ?: song.url }) { index, song ->
+                                    val useHazeEffect = DownloadSettingsStore.isHazeEffectEnabled(context)
                                     val itemHazeState = remember { HazeState() }
                                     Box(
                                         modifier = Modifier
@@ -490,9 +499,9 @@ fun MyMusicScreenV2(
                                                 .size(120.dp)
                                                 .clip(RoundedCornerShape(16.dp))
                                                 .background(colorScheme.surfaceVariant)
-                                                .hazeSource(itemHazeState),
+                                                .run { if (useHazeEffect) hazeSource(itemHazeState) else this },
                                             contentScale = ContentScale.Crop,
-                                            error = painterResource(id = getRandomPlaceholderId())
+                                            error = painterResource(id = getPlaceholderId(index))
                                         )
                                         // 分p标识 - 在封面右上角
                                         if (song.isPartOfMultiPage) {
@@ -513,13 +522,19 @@ fun MyMusicScreenV2(
                                                         bottomEnd = 16.dp
                                                     )
                                                 )
-                                                .hazeEffect(
-                                                    itemHazeState,
-                                                    HazeStyle(
-                                                        blurRadius = 10.dp,
-                                                        tint = HazeTint(Color.Black.copy(alpha = 0.2f))
-                                                    )
-                                                )
+                                                .run {
+                                                    if (useHazeEffect) {
+                                                        hazeEffect(
+                                                            itemHazeState,
+                                                            HazeStyle(
+                                                                blurRadius = 10.dp,
+                                                                tint = HazeTint(Color.Black.copy(alpha = 0.2f))
+                                                            )
+                                                        )
+                                                    } else {
+                                                        background(Color.Black.copy(alpha = 0.4f))
+                                                    }
+                                                }
                                                 .align(Alignment.BottomStart)
                                         ) {
                                             Column(
@@ -563,7 +578,8 @@ fun MyMusicScreenV2(
                     }
                     item {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            items(favoriteSongs) { song ->
+                            itemsIndexed(favoriteSongs, key = { _, song -> song.id ?: song.url }) { index, song ->
+                                val useHazeEffect = DownloadSettingsStore.isHazeEffectEnabled(context)
                                 val itemHazeState = remember { HazeState() }
                                 Box(
                                     modifier = Modifier.width(120.dp)
@@ -583,9 +599,9 @@ fun MyMusicScreenV2(
                                             .background(
                                                 MaterialTheme.colorScheme.surfaceVariant
                                             )
-                                            .hazeSource(itemHazeState),
+                                            .run { if (useHazeEffect) hazeSource(itemHazeState) else this },
                                         contentScale = ContentScale.Crop,
-                                        error = painterResource(id = getRandomPlaceholderId())
+                                        error = painterResource(id = getPlaceholderId(index))
                                     )
                                     // 分p标识 - 在封面右上角
                                     if (song.isPartOfMultiPage) {
@@ -606,13 +622,19 @@ fun MyMusicScreenV2(
                                                     bottomEnd = 16.dp
                                                 )
                                             )
-                                            .hazeEffect(
-                                                itemHazeState,
-                                                HazeStyle(
-                                                    blurRadius = 10.dp,
-                                                    tint = HazeTint(Color.Black.copy(alpha = 0.2f))
-                                                )
-                                            )
+                                            .run {
+                                                if (useHazeEffect) {
+                                                    hazeEffect(
+                                                        itemHazeState,
+                                                        HazeStyle(
+                                                            blurRadius = 10.dp,
+                                                            tint = HazeTint(Color.Black.copy(alpha = 0.2f))
+                                                        )
+                                                    )
+                                                } else {
+                                                    background(Color.Black.copy(alpha = 0.4f))
+                                                }
+                                            }
                                             .align(Alignment.BottomStart)
                                     ) {
                                         Column(
@@ -1810,6 +1832,7 @@ fun MyMusicScreenV2(
                                         )
                                     } else {
                                         otherPlaylists.forEach { targetPlaylist ->
+                                            val placeholderId = getPlaceholderId(targetPlaylist.id.hashCode())
                                             ListItem(
                                                 headlineContent = { Text(targetPlaylist.name) },
                                                 supportingContent = {
@@ -1826,11 +1849,11 @@ fun MyMusicScreenV2(
                                                                 .clip(RoundedCornerShape(8.dp))
                                                                 .background(colorScheme.surfaceVariant),
                                                             contentScale = ContentScale.Crop,
-                                                            error = painterResource(id = getRandomPlaceholderId())
+                                                            error = painterResource(id = placeholderId)
                                                         )
                                                     } else {
                                                         Image(
-                                                            painter = painterResource(id = getRandomPlaceholderId()),
+                                                            painter = painterResource(id = placeholderId),
                                                             contentDescription = null,
                                                             modifier = Modifier
                                                                 .size(48.dp)
@@ -2001,6 +2024,7 @@ fun MyMusicScreenV2(
                             LazyColumn(modifier = Modifier.fillMaxSize(), state = playlistDetailListState) {
                                 if (filteredAndSortedSongs.isNotEmpty()) {
                                     item {
+                                        val useHazeEffect = DownloadSettingsStore.isHazeEffectEnabled(context)
                                         val hazeState = remember { HazeState() }
                                         Box(Modifier.fillMaxWidth()) {
                                             AsyncImage(
@@ -2009,21 +2033,27 @@ fun MyMusicScreenV2(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
                                                     .height(190.dp)
-                                                    .hazeSource(hazeState),
+                                                    .run { if (useHazeEffect) hazeSource(hazeState) else this },
                                                 contentScale = ContentScale.Crop,
-                                                error = painterResource(id = getRandomPlaceholderId())
+                                                error = painterResource(id = getPlaceholderId(0))
                                             )
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
                                                     .height(50.dp)
-                                                    .hazeEffect(
-                                                        hazeState,
-                                                        HazeStyle(
-                                                            blurRadius = 8.dp,
-                                                            tint = HazeTint(Color.Black.copy(alpha = 0.3f))
-                                                        )
-                                                    )
+                                                    .run {
+                                                        if (useHazeEffect) {
+                                                            hazeEffect(
+                                                                hazeState,
+                                                                HazeStyle(
+                                                                    blurRadius = 8.dp,
+                                                                    tint = HazeTint(Color.Black.copy(alpha = 0.3f))
+                                                                )
+                                                            )
+                                                        } else {
+                                                            background(Color.Black.copy(alpha = 0.4f))
+                                                        }
+                                                    }
                                                     .align(Alignment.BottomStart)
                                             ) {
                                                 Text(
@@ -2071,10 +2101,11 @@ fun MyMusicScreenV2(
                                     Column {
                                         val isSelected = selectedSongs.contains(index)
                                         val isDragging = draggedSongIndex != -1 && selectedSongs.contains(index)
-                                        val isCurrentlyPlaying = remember(vm.currentSong.value) {
-                                            vm.currentSong.value?.let { currentSong ->
-                                                song.id.isNotBlank() && song.id == currentSong.id ||
-                                                song.url.isNotBlank() && song.url == currentSong.url
+                                        val currentSong = vm.currentSong.value
+                                        val isCurrentlyPlaying = remember(currentSong, song.id, song.url) {
+                                            currentSong?.let {
+                                                (song.id.isNotBlank() && song.id == it.id) ||
+                                                (song.url.isNotBlank() && song.url == it.url)
                                             } ?: false
                                         }
                                         val playingLineHeight by animateDpAsState(
@@ -2206,7 +2237,7 @@ fun MyMusicScreenV2(
                                                     .clip(RoundedCornerShape(10.dp))
                                                     .background(colorScheme.surfaceVariant),
                                                 contentScale = ContentScale.Crop,
-                                                error = painterResource(id = getRandomPlaceholderId())
+                                                error = painterResource(id = getPlaceholderId(index))
                                             )
                                             Column(
                                                 Modifier.padding(start = if (isSelectionMode) 12.dp else 16.dp)
@@ -2773,7 +2804,7 @@ fun MyMusicScreenV2(
                                                     .clip(RoundedCornerShape(10.dp))
                                                     .background(colorScheme.surfaceVariant),
                                                 contentScale = ContentScale.Crop,
-                                                error = painterResource(id = getRandomPlaceholderId())
+                                                error = painterResource(id = getPlaceholderId(index))
                                             )
                                         }
                                         Column(Modifier.padding(start = 16.dp).weight(1f)) {
@@ -2986,6 +3017,7 @@ fun MyMusicScreenV2(
                             SettingsItem("歌曲淡入淡出", Icons.Default.GraphicEq, "播放暂停时音量渐变", "fade"),
                             SettingsItem("自动缓存", Icons.Default.Download, "根据歌曲播放次数，自动缓存歌曲", "auto_cache"),
                             SettingsItem("触感反馈", Icons.Default.Vibration, "按钮点击、操作完成等震动反馈", "vibration"),
+                            SettingsItem("高级效果", Icons.Default.BlurLinear, "将为组件添加模糊效果", "haze"),
                             SettingsItem("默认音乐打开方式", Icons.Default.Apps, "将本应用设为默认音乐播放器", "default_opener"),
                             SettingsItem("备用音源", Icons.Default.Link, backupAudioStatus, "backup_audio"),
                             SettingsItem("启动设置", Icons.Default.Power, "控制应用启动时的播放行为", "startup"),
@@ -3262,6 +3294,14 @@ fun MyMusicScreenV2(
                                                 onCheckedChange = { enabled ->
                                                     vibrationEnabled = enabled
                                                     DownloadSettingsStore.setVibrationEnabled(context, enabled)
+                                                }
+                                            )
+                                        } else if (item.id == "haze") {
+                                            Switch(
+                                                checked = hazeEffectEnabled,
+                                                onCheckedChange = { enabled ->
+                                                    hazeEffectEnabled = enabled
+                                                    DownloadSettingsStore.setHazeEffectEnabled(context, enabled)
                                                 }
                                             )
                                         } else if (item.id == "default_opener") {

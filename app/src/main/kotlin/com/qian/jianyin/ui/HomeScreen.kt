@@ -56,13 +56,14 @@ import kotlinx.coroutines.launch
 import com.qian.jianyin.netease.NeteasePlaylistResult
 import com.qian.jianyin.netease.NeteaseSongSearchResult
 
-private fun getRandomPlaceholderId(): Int {
-    val ids = listOf(
-        R.drawable.miku_1, R.drawable.miku_2, R.drawable.miku_3,
-        R.drawable.miku_4, R.drawable.miku_5, R.drawable.miku_6,
-        R.drawable.miku_7, R.drawable.miku_8, R.drawable.miku_9
-    )
-    return ids.random()
+private val placeholderIds = listOf(
+    R.drawable.miku_1, R.drawable.miku_2, R.drawable.miku_3,
+    R.drawable.miku_4, R.drawable.miku_5, R.drawable.miku_6,
+    R.drawable.miku_7, R.drawable.miku_8, R.drawable.miku_9
+)
+
+private fun getPlaceholderId(index: Int): Int {
+    return placeholderIds[(index and Int.MAX_VALUE) % placeholderIds.size]
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -411,11 +412,13 @@ private fun TodayRecommendShelf(
     songs: List<NeteaseSongSearchResult>,
     onClick: (NeteaseSongSearchResult) -> Unit
 ) {
+    val useHazeEffect = DownloadSettingsStore.isHazeEffectEnabled(LocalContext.current)
+    
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(horizontal = 4.dp)
     ) {
-        items(songs, key = { it.id }) { song ->
+        itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
             val itemHazeState = remember { HazeState() }
             Box(
                 modifier = Modifier
@@ -429,9 +432,9 @@ private fun TodayRecommendShelf(
                         .size(110.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .hazeSource(itemHazeState),
+                        .run { if (useHazeEffect) hazeSource(itemHazeState) else this },
                     contentScale = ContentScale.Crop,
-                    error = painterResource(id = getRandomPlaceholderId())
+                    error = painterResource(id = getPlaceholderId(index))
                 )
                 Box(
                     modifier = Modifier
@@ -442,13 +445,19 @@ private fun TodayRecommendShelf(
                                 bottomEnd = 12.dp
                             )
                         )
-                        .hazeEffect(
-                            itemHazeState,
-                            HazeStyle(
-                                blurRadius = 8.dp,
-                                tint = HazeTint(Color.Black.copy(alpha = 0.25f))
-                            )
-                        )
+                        .run {
+                            if (useHazeEffect) {
+                                hazeEffect(
+                                    itemHazeState,
+                                    HazeStyle(
+                                        blurRadius = 8.dp,
+                                        tint = HazeTint(Color.Black.copy(alpha = 0.25f))
+                                    )
+                                )
+                            } else {
+                                background(Color.Black.copy(alpha = 0.4f))
+                            }
+                        }
                         .align(Alignment.BottomStart)
                 ) {
                     Column(
@@ -487,11 +496,13 @@ private fun SongShelf(
     songs: List<NeteaseSongSearchResult>,
     onClick: (NeteaseSongSearchResult) -> Unit
 ) {
+    val useHazeEffect = DownloadSettingsStore.isHazeEffectEnabled(LocalContext.current)
+    
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(horizontal = 4.dp)
     ) {
-        items(songs, key = { it.id }) { song ->
+        itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
             val itemHazeState = remember { HazeState() }
             Box(
                 modifier = Modifier
@@ -505,9 +516,9 @@ private fun SongShelf(
                         .size(120.dp)
                         .clip(RoundedCornerShape(14.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .hazeSource(itemHazeState),
+                        .run { if (useHazeEffect) hazeSource(itemHazeState) else this },
                     contentScale = ContentScale.Crop,
-                    error = painterResource(id = getRandomPlaceholderId())
+                    error = painterResource(id = getPlaceholderId(index))
                 )
                 Box(
                     modifier = Modifier
@@ -518,13 +529,19 @@ private fun SongShelf(
                                 bottomEnd = 14.dp
                             )
                         )
-                        .hazeEffect(
-                            itemHazeState,
-                            HazeStyle(
-                                blurRadius = 8.dp,
-                                tint = HazeTint(Color.Black.copy(alpha = 0.25f))
-                            )
-                        )
+                        .run {
+                            if (useHazeEffect) {
+                                hazeEffect(
+                                    itemHazeState,
+                                    HazeStyle(
+                                        blurRadius = 8.dp,
+                                        tint = HazeTint(Color.Black.copy(alpha = 0.25f))
+                                    )
+                                )
+                            } else {
+                                background(Color.Black.copy(alpha = 0.4f))
+                            }
+                        }
                         .align(Alignment.BottomStart)
                 ) {
                     Column(
@@ -563,6 +580,7 @@ private fun PlaylistCard(
     playlist: NeteasePlaylistResult,
     onClick: () -> Unit
 ) {
+    val useHazeEffect = DownloadSettingsStore.isHazeEffectEnabled(LocalContext.current)
     val hazeState = remember { HazeState() }
     Box(
         modifier = Modifier
@@ -577,9 +595,9 @@ private fun PlaylistCard(
                 .aspectRatio(1f)
                 .clip(RoundedCornerShape(16.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .hazeSource(hazeState),
+                .run { if (useHazeEffect) hazeSource(hazeState) else this },
             contentScale = ContentScale.Crop,
-            error = painterResource(id = getRandomPlaceholderId())
+            error = painterResource(id = getPlaceholderId(playlist.id.hashCode()))
         )
         Box(
             modifier = Modifier
@@ -591,13 +609,19 @@ private fun PlaylistCard(
                         bottomEnd = 16.dp
                     )
                 )
-                .hazeEffect(
-                    hazeState,
-                    HazeStyle(
-                        blurRadius = 8.dp,
-                        tint = HazeTint(Color.Black.copy(alpha = 0.25f))
-                    )
-                )
+                .run {
+                    if (useHazeEffect) {
+                        hazeEffect(
+                            hazeState,
+                            HazeStyle(
+                                blurRadius = 8.dp,
+                                tint = HazeTint(Color.Black.copy(alpha = 0.25f))
+                            )
+                        )
+                    } else {
+                        background(Color.Black.copy(alpha = 0.4f))
+                    }
+                }
                 .align(Alignment.BottomStart)
         ) {
             Column(modifier = Modifier.padding(10.dp)) {
@@ -649,7 +673,7 @@ private fun RankCard(
                     .size(56.dp)
                     .clip(RoundedCornerShape(12.dp)),
                 contentScale = ContentScale.Crop,
-                error = painterResource(id = getRandomPlaceholderId())
+                error = painterResource(id = getPlaceholderId(name.hashCode()))
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -819,6 +843,7 @@ private fun PlaylistDetailPage(
             LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
                 if (songs.isNotEmpty()) {
                     item {
+                        val useHazeEffect = DownloadSettingsStore.isHazeEffectEnabled(context)
                         val hazeState = remember { HazeState() }
                         Box(Modifier.fillMaxWidth()) {
                             AsyncImage(
@@ -827,21 +852,27 @@ private fun PlaylistDetailPage(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(190.dp)
-                                    .hazeSource(hazeState),
+                                    .run { if (useHazeEffect) hazeSource(hazeState) else this },
                                 contentScale = ContentScale.Crop,
-                                error = painterResource(id = getRandomPlaceholderId())
+                                error = painterResource(id = getPlaceholderId(0))
                             )
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(50.dp)
-                                    .hazeEffect(
-                                        hazeState,
-                                        HazeStyle(
-                                            blurRadius = 8.dp,
-                                            tint = HazeTint(Color.Black.copy(alpha = 0.3f))
-                                        )
-                                    )
+                                    .run {
+                                        if (useHazeEffect) {
+                                            hazeEffect(
+                                                hazeState,
+                                                HazeStyle(
+                                                    blurRadius = 8.dp,
+                                                    tint = HazeTint(Color.Black.copy(alpha = 0.3f))
+                                                )
+                                            )
+                                        } else {
+                                            background(Color.Black.copy(alpha = 0.4f))
+                                        }
+                                    }
                                     .align(Alignment.BottomStart)
                             ) {
                                 Text(
@@ -946,7 +977,7 @@ private fun PlaylistDetailPage(
                                     .size(48.dp)
                                     .clip(RoundedCornerShape(10.dp)),
                                 contentScale = ContentScale.Crop,
-                                error = painterResource(id = getRandomPlaceholderId())
+                                error = painterResource(id = getPlaceholderId(index))
                             )
                             Column(
                                 Modifier.padding(start = if (isSelectionMode) 12.dp else 16.dp)
@@ -1013,6 +1044,7 @@ private fun PlaylistDetailPage(
                         Text("没有其他歌单可添加", modifier = Modifier.padding(vertical = 16.dp))
                     } else {
                         otherPlaylists.forEach { target ->
+                            val placeholderId = getPlaceholderId(target.id.hashCode())
                             ListItem(
                                 headlineContent = { Text(target.name) },
                                 supportingContent = { Text("${target.songs.size} 首歌曲") },
@@ -1024,7 +1056,7 @@ private fun PlaylistDetailPage(
                                             .size(48.dp)
                                             .clip(RoundedCornerShape(8.dp)),
                                         contentScale = ContentScale.Crop,
-                                        error = painterResource(id = getRandomPlaceholderId())
+                                        error = painterResource(id = placeholderId)
                                     )
                                 },
                                 modifier = Modifier.clickable {

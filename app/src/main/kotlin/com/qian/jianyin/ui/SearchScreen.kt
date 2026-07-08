@@ -33,9 +33,10 @@ import com.qian.jianyin.R
 import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.launch
 
-private fun getRandomPlaceholderId(): Int {
-    val ids = listOf(R.drawable.miku_1, R.drawable.miku_2, R.drawable.miku_3, R.drawable.miku_4, R.drawable.miku_5, R.drawable.miku_6, R.drawable.miku_7, R.drawable.miku_8, R.drawable.miku_9)
-    return ids.random()
+private val placeholderIds = listOf(R.drawable.miku_1, R.drawable.miku_2, R.drawable.miku_3, R.drawable.miku_4, R.drawable.miku_5, R.drawable.miku_6, R.drawable.miku_7, R.drawable.miku_8, R.drawable.miku_9)
+
+private fun getPlaceholderId(index: Int): Int {
+    return placeholderIds[(index and Int.MAX_VALUE) % placeholderIds.size]
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -276,10 +277,11 @@ fun SearchScreen(
                         ) {
                             itemsIndexed(vm.searchResults) { index, song ->
                                 val isSelected = selectedSongs.contains(index)
-                                val isCurrentlyPlaying = remember(vm.currentSong.value) {
-                                    vm.currentSong.value?.let { currentSong ->
-                                        song.id.isNotBlank() && song.id == currentSong.id ||
-                                        song.url.isNotBlank() && song.url == currentSong.url
+                                val currentSong = vm.currentSong.value
+                                val isCurrentlyPlaying = remember(currentSong, song.id, song.url) {
+                                    currentSong?.let {
+                                        (song.id.isNotBlank() && song.id == it.id) ||
+                                        (song.url.isNotBlank() && song.url == it.url)
                                     } ?: false
                                 }
                                 val playingLineHeight by animateDpAsState(
@@ -363,7 +365,7 @@ fun SearchScreen(
                                                 .clip(RoundedCornerShape(12.dp))
                                                 .background(MaterialTheme.colorScheme.surfaceVariant),
                                             contentScale = ContentScale.Crop,
-                                            error = painterResource(id = getRandomPlaceholderId())
+                                            error = painterResource(id = getPlaceholderId(index))
                                         )
                                         Column(Modifier.padding(start = if (isSelectionMode) 12.dp else 16.dp).weight(1f)) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -401,6 +403,7 @@ fun SearchScreen(
                         Text("没有其他歌单可添加", modifier = Modifier.padding(vertical = 16.dp))
                     } else {
                         otherPlaylists.forEach { targetPlaylist ->
+                            val placeholderId = getPlaceholderId(targetPlaylist.id.hashCode())
                             ListItem(
                                 headlineContent = { Text(targetPlaylist.name) },
                                 supportingContent = { Text("${targetPlaylist.songs.size} 首歌曲") },
@@ -413,7 +416,7 @@ fun SearchScreen(
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(colorScheme.surfaceVariant),
                                         contentScale = ContentScale.Crop,
-                                        error = painterResource(id = getRandomPlaceholderId())
+                                        error = painterResource(id = placeholderId)
                                     )
                                 },
                                 modifier = Modifier.clickable {
@@ -558,7 +561,7 @@ fun SongItemViewV2(song: Song, cs: ColorScheme, onClick: () -> Unit) {
                     .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentScale = ContentScale.Crop,
-                error = painterResource(id = getRandomPlaceholderId())
+                error = painterResource(id = getPlaceholderId((song.id ?: song.url).hashCode()))
             )
             
             Column(
