@@ -92,14 +92,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- 开机启动接收器 -->
-        <receiver android:name=".playback.BootReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
-
         <!-- 统一音频播放服务（前台保活 + MediaSession + 媒体控制通知） -->
         <service
             android:name=".playback.AudioPlaybackService"

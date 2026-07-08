@@ -185,7 +185,6 @@ jianyin/
 │   │   │   ├── playback/                         # 播放模块
 │   │   │   │   ├── AudioPlaybackService.kt       # 后台音频播放服务
 │   │   │   │   ├── BluetoothDisconnectReceiver.kt # 蓝牙断开广播接收器
-│   │   │   │   ├── BootReceiver.kt               # 开机自启动广播接收器
 │   │   │   │   ├── DesktopLyricService.kt        # 桌面歌词悬浮窗服务
 │   │   │   │   ├── Media3SessionHolder.kt        # Media3 媒体会话持有者
 │   │   │   │   ├── MediaSessionManager.kt        # 媒体会话管理器
