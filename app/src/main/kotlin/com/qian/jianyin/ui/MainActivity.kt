@@ -3190,7 +3190,7 @@ fun AddPlaylistToQueueDialog(
                                 )
                             } else {
                                 LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
-                                    items(userPlaylists) { playlist ->
+                                    items(userPlaylists, key = { it.id.ifBlank { it.name } }) { playlist ->
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -3244,7 +3244,7 @@ fun AddPlaylistToQueueDialog(
                         }
                         1 -> {
                             LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
-                                items(homePlaylists) { playlist ->
+                                items(homePlaylists, key = { it.playlistId.ifBlank { it.name } }) { playlist ->
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()

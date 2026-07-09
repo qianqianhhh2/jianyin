@@ -478,7 +478,7 @@ fun MyMusicScreenV2(
                             Spacer(Modifier.height(12.dp))
 
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                itemsIndexed(previewSongs, key = { _, song -> song.id ?: song.url }) { index, song ->
+                                itemsIndexed(previewSongs, key = { _, song -> song.id.ifBlank { song.url } }) { index, song ->
                                     val useHazeEffect = DownloadSettingsStore.isHazeEffectEnabled(context)
                                     val itemHazeState = remember { HazeState() }
                                     Box(
@@ -578,7 +578,7 @@ fun MyMusicScreenV2(
                     }
                     item {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            itemsIndexed(favoriteSongs, key = { _, song -> song.id ?: song.url }) { index, song ->
+                            itemsIndexed(favoriteSongs, key = { _, song -> song.id.ifBlank { song.url } }) { index, song ->
                                 val useHazeEffect = DownloadSettingsStore.isHazeEffectEnabled(context)
                                 val itemHazeState = remember { HazeState() }
                                 Box(
@@ -2094,7 +2094,7 @@ fun MyMusicScreenV2(
                                     item { Spacer(Modifier.height(16.dp)) }
                                 }
 
-                                itemsIndexed(filteredAndSortedSongs) { index, song ->
+                                itemsIndexed(filteredAndSortedSongs, key = { _, song -> song.id.ifBlank { song.url } }) { index, song ->
                                     var isDownloading by remember { mutableStateOf(false) }
                                     var showSongMenu by remember { mutableStateOf(false) }
 
@@ -2701,7 +2701,7 @@ fun MyMusicScreenV2(
 
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
                             // 歌曲列表
-                            itemsIndexed(activeRecentPlaylist ?: emptyList()) { index, song ->
+                            itemsIndexed(activeRecentPlaylist ?: emptyList(), key = { _, song -> song.id.ifBlank { song.url } }) { index, song ->
                                 var isDownloading by remember { mutableStateOf(false) }
                                 var showSongMenu by remember { mutableStateOf(false) }
                                 val isSelected = selectedRecentSongs.contains(index)

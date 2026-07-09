@@ -418,7 +418,7 @@ private fun TodayRecommendShelf(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(horizontal = 4.dp)
     ) {
-        itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
+        itemsIndexed(songs, key = { _, song -> song.id.ifBlank { song.name } }) { index, song ->
             val itemHazeState = remember { HazeState() }
             Box(
                 modifier = Modifier
@@ -502,7 +502,7 @@ private fun SongShelf(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(horizontal = 4.dp)
     ) {
-        itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
+        itemsIndexed(songs, key = { _, song -> song.id.ifBlank { song.name } }) { index, song ->
             val itemHazeState = remember { HazeState() }
             Box(
                 modifier = Modifier
@@ -906,7 +906,7 @@ private fun PlaylistDetailPage(
                     item { Spacer(Modifier.height(16.dp)) }
                 }
 
-                itemsIndexed(filteredSongs) { index, song ->
+                itemsIndexed(filteredSongs, key = { _, song -> song.id.ifBlank { song.url } }) { index, song ->
                     Column {
                         val isSelected = index in selectedSongs
                         val isCurrentlyPlaying = remember(currentSong) {

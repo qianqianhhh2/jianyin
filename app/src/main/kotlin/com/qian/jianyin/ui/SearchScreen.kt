@@ -275,7 +275,7 @@ fun SearchScreen(
                             state = searchListState,
                             contentPadding = innerPadding
                         ) {
-                            itemsIndexed(vm.searchResults) { index, song ->
+                            itemsIndexed(vm.searchResults, key = { _, song -> song.id.ifBlank { song.url } }) { index, song ->
                                 val isSelected = selectedSongs.contains(index)
                                 val currentSong = vm.currentSong.value
                                 val isCurrentlyPlaying = remember(currentSong, song.id, song.url) {
