@@ -26,13 +26,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
-import org.json.JSONArray
 import org.json.JSONObject
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
-import java.util.concurrent.TimeUnit
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.converter.scalars.ScalarsConverterFactory
@@ -650,29 +644,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     
-    /**
-     * 交错插入算法：将两个列表按比例交替插入，模拟自然混合效果
-     * 比例约为 3:2（推荐:曲库），确保风格平滑过渡
-     */
-    private fun interleaveSongs(list1: List<Song>, list2: List<Song>): List<Song> {
-        val result = mutableListOf<Song>()
-        val it1 = list1.iterator()
-        val it2 = list2.iterator()
-        
-        var count = 0
-        while (it1.hasNext() || it2.hasNext()) {
-            if (count % 5 < 3 && it1.hasNext()) {
-                result.add(it1.next())
-            } else if (it2.hasNext()) {
-                result.add(it2.next())
-            } else if (it1.hasNext()) {
-                result.add(it1.next())
-            }
-            count++
-        }
-        
-        return result
-    }
     
     /**
      * 获取今日推荐歌曲（使用热歌榜作为今日推荐）
@@ -1100,27 +1071,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun calculateMatchScore(song: Song, query: String): Int {
-        var score = 0
-        val songNameLower = song.name.lowercase()
-        val artistLower = song.artist.lowercase()
-        
-        if (songNameLower == query) {
-            score += 1000
-        } else if (songNameLower.startsWith(query)) {
-            score += 500
-        } else if (songNameLower.contains(query)) {
-            score += 200 + (100 - songNameLower.indexOf(query))
-        }
-        
-        if (artistLower == query) {
-            score += 800
-        } else if (artistLower.contains(query)) {
-            score += 100
-        }
-        
-        return score
-    }
     
     fun clearSearchResults() {
         searchJob?.cancel()
@@ -1177,80 +1127,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun fetchBackupAudioUrl(songId: String, backupApiUrl: String): String {
-        val baseUrl = if (backupApiUrl.endsWith("/")) backupApiUrl else "$backupApiUrl/"
-        val requestUrl = "${baseUrl}?type=song&id=$songId&br=320"
-        Log.d("MusicVM", "fetchBackupAudioUrl: 请求备用音源: $requestUrl")
-        
-        val client = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.SECONDS)
-            .followRedirects(true)
-            .followSslRedirects(true)
-            .build()
-        
-        val request = Request.Builder()
-            .url(requestUrl)
-            .build()
-        
-        return suspendCancellableCoroutine { continuation ->
-            client.newCall(request).enqueue(object : okhttp3.Callback {
-                override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
-                    try {
-                        if (!response.isSuccessful) {
-                            Log.e("MusicVM", "fetchBackupAudioUrl: 请求失败，状态码: ${response.code}")
-                            continuation.resume("")
-                            return
-                        }
-                        
-                        val contentType = response.header("Content-Type", "") ?: ""
-                        Log.d("MusicVM", "fetchBackupAudioUrl: Content-Type: $contentType")
-                        
-                        if (contentType.contains("application/json") || contentType.contains("text/")) {
-                            val body = response.body?.string() ?: ""
-                            Log.d("MusicVM", "fetchBackupAudioUrl: 响应内容: ${body.take(500)}")
-                            
-                            try {
-                                val jsonArray = JSONArray(body)
-                                if (jsonArray.length() > 0) {
-                                    val firstObj = jsonArray.getJSONObject(0)
-                                    val audioUrl = firstObj.optString("url", "")
-                                    if (audioUrl.isNotBlank()) {
-                                        Log.d("MusicVM", "fetchBackupAudioUrl: JSON解析获取到音频URL: $audioUrl")
-                                        continuation.resume(audioUrl)
-                                        return
-                                    }
-                                }
-                            } catch (jsonE: Exception) {
-                                Log.d("MusicVM", "fetchBackupAudioUrl: JSON解析失败，尝试作为音频URL处理")
-                            }
-                        }
-                        
-                        val finalUrl = response.request.url.toString()
-                        Log.d("MusicVM", "fetchBackupAudioUrl: 直接使用请求URL作为音频源: $finalUrl")
-                        continuation.resume(finalUrl)
-                    } catch (e: Exception) {
-                        Log.e("MusicVM", "fetchBackupAudioUrl: 处理响应失败", e)
-                        continuation.resume("")
-                    } finally {
-                        response.close()
-                    }
-                }
-                
-                override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
-                    Log.e("MusicVM", "fetchBackupAudioUrl: 请求备用音源失败", e)
-                    continuation.resume("")
-                }
-            })
-            
-            continuation.invokeOnCancellation {
-                try {
-                    client.dispatcher.cancelAll()
-                } catch (_: Exception) {
-                }
-            }
-        }
-    }
 
     /** 获取网易云歌词，返回 Pair(原词, 翻译词) */
     suspend fun fetchNeteaseLyric(song: Song): Pair<String?, String?> {
@@ -1324,17 +1200,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     
-    private fun isSameSong(a: Song, b: Song): Boolean {
-        // 优先比较ID（最可靠的标识）
-        if (a.id.isNotBlank() && b.id.isNotBlank() && a.id == b.id) {
-            return true
-        }
-        // 如果ID不可用或不匹配，比较音乐文件的URL（通常是唯一的）
-        if (a.url.isNotBlank() && b.url.isNotBlank() && a.url == b.url) {
-            return true
-        }
-        return false
-    }
     
     fun playSong(song: Song, newQueue: List<Song>? = null) {
         Log.d("MusicVM", "playSong 被调用: ${song.name}, 来源队列大小=${newQueue?.size ?: "无"}")
@@ -1782,12 +1647,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 currentLrc.clear()
                 currentTranslatedLrc.clear()
                 if (lrcContent.isNotEmpty()) {
-                    currentLrc.addAll(parseLyricAuto(lrcContent))
+                    currentLrc.addAll(LyricParser.parseAuto(lrcContent))
                 } else {
                     currentLrc.add(LyricEntry(0, 5000, "暂无歌词"))
                 }
                 if (!translatedLrcContent.isNullOrBlank()) {
-                    currentTranslatedLrc.addAll(parseLyricAuto(translatedLrcContent))
+                    currentTranslatedLrc.addAll(LyricParser.parseAuto(translatedLrcContent))
                 }
             } catch (e: Exception) {
                 currentLrc.clear()
@@ -1962,7 +1827,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             currentLrc.clear()
             currentTranslatedLrc.clear()
             if (lrcContent.isNotEmpty()) {
-                currentLrc.addAll(parseLyricAuto(lrcContent))
+                currentLrc.addAll(LyricParser.parseAuto(lrcContent))
             } else {
                 currentLrc.add(LyricEntry(0, 5000, "暂无歌词"))
             }
@@ -2456,91 +2321,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         Log.d("MusicVM", "歌单队列重排序: from=$fromIndex, to=$toIndex, 当前播放歌单索引: ${currentPlaylistIndex.intValue}")
     }
     
-    /** 自动检测并解析歌词：YRC → 逐字, LRC → 逐行 */
-    private fun parseLyricAuto(content: String): List<LyricEntry> {
-        if (content.isBlank()) return emptyList()
-        return if (YRC_LINE_REGEX.containsMatchIn(content)) {
-            parseYrc(content)
-        } else {
-            parseLrc(content)
-        }
-    }
-
-    /** 解析 YRC 逐字歌词 */
-    private fun parseYrc(yrc: String): List<LyricEntry> {
-        val out = mutableListOf<LyricEntry>()
-        val headerRegex = Regex("""\[(\d+),\s*(\d+)]""")
-        val segRegex = Regex("""\((\d+),\s*(\d+),\s*[-\d]+\)([^()\n\r]+)""")
-
-        yrc.lineSequence().forEach { raw ->
-            val line = raw.trim()
-            if (line.isEmpty()) return@forEach
-            if (!line.startsWith("[")) return@forEach
-
-            val header = headerRegex.find(line) ?: return@forEach
-            val start = header.groupValues[1].toLong()
-            val dur = header.groupValues[2].toLong()
-            val end = start + dur
-
-            val segs = segRegex.findAll(line).toList()
-            if (segs.isEmpty()) {
-                val text = line.substringAfter("]").trim()
-                if (text.isNotEmpty()) out.add(LyricEntry(start, end, text))
-            } else {
-                val words = mutableListOf<WordTiming>()
-                val sb = StringBuilder()
-                for (m in segs) {
-                    val ws = m.groupValues[1].toLong()
-                    val wd = m.groupValues[2].toLong()
-                    val we = ws + wd
-                    val t = m.groupValues[3]
-                    sb.append(t)
-                    words.add(WordTiming(ws, we, t.length))
-                }
-                out.add(LyricEntry(start, end, sb.toString(), words))
-            }
-        }
-        return out.sortedBy { it.startTimeMs }
-    }
-
-    /** 解析 LRC 逐行歌词（跳过空行和元数据行） */
-    private fun parseLrc(lrc: String): List<LyricEntry> {
-        val tag = Regex("""\[(\d{2}):(\d{2})(?:[.:](\d{2,3}))?]""")
-        val timeline = mutableListOf<Pair<Long, String>>()
-
-        lrc.lineSequence().forEach { raw ->
-            val line = raw.trim()
-            if (line.isEmpty()) return@forEach
-            // 跳过 JSON/元数据片段
-            if (line.startsWith("{") || line.startsWith("}")) return@forEach
-            if (line.startsWith("[ti:") || line.startsWith("[ar:") || line.startsWith("[al:") ||
-                line.startsWith("[by:") || line.startsWith("[offset:")) return@forEach
-
-            val m = tag.find(line) ?: return@forEach
-            val mm = m.groupValues[1].toInt()
-            val ss = m.groupValues[2].toInt()
-            val msStr = m.groupValues.getOrNull(3).orEmpty()
-            val ms = when (msStr.length) {
-                0 -> 0
-                2 -> msStr.toInt() * 10
-                else -> msStr.toInt()
-            }
-            val time = mm * 60_000L + ss * 1_000L + ms
-            val text = line.substring(m.range.last + 1).trim()
-            if (text.isNotEmpty()) {
-                timeline.add(time to text)
-            }
-        }
-
-        timeline.sortBy { it.first }
-        val out = mutableListOf<LyricEntry>()
-        for (i in timeline.indices) {
-            val (start, text) = timeline[i]
-            val end = if (i < timeline.lastIndex) timeline[i + 1].first else start + 5_000L
-            out.add(LyricEntry(start, end, text))
-        }
-        return out
-    }
 
     private fun startProgressUpdater() {
         progressJob?.cancel()
@@ -2888,14 +2668,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 currentLrc.clear()
                 currentTranslatedLrc.clear()
                 if (lrcContent.isNotEmpty()) {
-                    currentLrc.addAll(parseLyricAuto(lrcContent))
+                    currentLrc.addAll(LyricParser.parseAuto(lrcContent))
                     Log.d("MusicVM", "歌词加载完成: currentLrc.size=${currentLrc.size}, lrcContent长度=${lrcContent.length}")
                 } else {
                     currentLrc.add(LyricEntry(0, 5000, "暂无歌词"))
                     Log.d("MusicVM", "歌词为空，使用暂无歌词占位")
                 }
                 if (!translatedLrcContent.isNullOrBlank()) {
-                    currentTranslatedLrc.addAll(parseLyricAuto(translatedLrcContent))
+                    currentTranslatedLrc.addAll(LyricParser.parseAuto(translatedLrcContent))
                     Log.d("MusicVM", "翻译歌词加载完成: size=${currentTranslatedLrc.size}")
                 }
             } catch (e: Exception) {
@@ -3183,8 +2963,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private const val FADE_DURATION_MS = 500L
         private const val FADE_STEP_MS = 50L
         
-        /** YRC歌词行正则表达式（静态常量，类加载时初始化） */
-        private val YRC_LINE_REGEX = Regex("""\[\d+,\s*\d+]\(\d+,""")
 
         /**
          * 静态方法：获取历史记录
