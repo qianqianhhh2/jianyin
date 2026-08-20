@@ -22,6 +22,7 @@
 
     signingConfigs {
         release {
+            storeFile file('D:\\project\\android.keystore')
             storePassword "090819"
             keyAlias "qiansign"
             keyPassword "090819"
