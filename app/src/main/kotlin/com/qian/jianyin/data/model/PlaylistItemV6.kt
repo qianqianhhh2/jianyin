@@ -28,7 +28,8 @@ import coil.compose.AsyncImage
 fun PlaylistItemV6(
     playlist: UserSyncedPlaylist,
     onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    playCount: Long = 0
 ) {
     val colorScheme = MaterialTheme.colorScheme
     
@@ -87,7 +88,7 @@ fun PlaylistItemV6(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "${playlist.songs.size} 首歌曲",
+                text = if (playCount > 0) "${playlist.songs.size} 首歌曲 · 播放 $playCount 次" else "${playlist.songs.size} 首歌曲",
                 style = MaterialTheme.typography.bodySmall,
                 color = colorScheme.onSurfaceVariant
             )

@@ -2004,7 +2004,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         fadeJob?.cancel()
         player.volume = 0f
         fadeJob = viewModelScope.launch {
-            val steps = (FADE_DURATION_MS / FADE_STEP_MS).toInt()
+            val fadeDuration = DownloadSettingsStore.getFadeDuration(context)
+            val steps = (fadeDuration / FADE_STEP_MS).toInt().coerceAtLeast(1)
             val volumeStep = 1f / steps
             repeat(steps) { step ->
                 player.volume = (step + 1) * volumeStep
@@ -2023,7 +2024,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         
         fadeJob?.cancel()
         fadeJob = viewModelScope.launch {
-            val steps = (FADE_DURATION_MS / FADE_STEP_MS).toInt()
+            val fadeDuration = DownloadSettingsStore.getFadeDuration(context)
+            val steps = (fadeDuration / FADE_STEP_MS).toInt().coerceAtLeast(1)
             val volumeStep = 1f / steps
             repeat(steps) { step ->
                 player.volume = 1f - (step + 1) * volumeStep
@@ -2283,7 +2285,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         playQueue.clear()
         playQueue.addAll(playlist.songs)
         currentQueueIndex.intValue = 0
-        
+
+        // 记录歌单播放次数
+        PlaylistDataStore.incrementPlayCount(getApplication(), playlist.id)
+
         if (playlist.songs.isNotEmpty()) {
             startPlaying(playlist.songs[0], playlist.songs)
         }
@@ -2960,7 +2965,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     companion object {
-        private const val FADE_DURATION_MS = 500L
         private const val FADE_STEP_MS = 50L
         
 

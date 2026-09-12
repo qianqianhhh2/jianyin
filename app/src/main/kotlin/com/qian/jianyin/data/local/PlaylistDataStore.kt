@@ -33,6 +33,8 @@ object PlaylistDataStore {
     private const val KEY = "user_synced_playlists"
     private const val PREFS_NAME = "playlists"
     private const val PLAYLISTS_DIR = "playlists"
+    private const val KEY_PLAYLIST_PLAY_COUNTS = "playlist_play_counts"   // 歌单播放次数(id->次数)
+    private const val KEY_PLAYLIST_SORT_BY_PLAYS = "playlist_sort_by_plays" // 是否按播放次数排序歌单
     private val gson = Gson()
 
     // 收藏歌单的特殊ID和名称
@@ -280,6 +282,62 @@ object PlaylistDataStore {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY, gson.toJson(nonLocalPlaylists))
+            .apply()
+    }
+
+    // ========== 歌单播放次数 ==========
+
+    /**
+     * 获取所有歌单的播放次数映射表
+     * @return 歌单ID到播放次数的映射
+     */
+    fun getPlayCounts(context: Context): Map<String, Long> {
+        val json = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_PLAYLIST_PLAY_COUNTS, null) ?: return emptyMap()
+        return try {
+            val type = object : TypeToken<Map<String, Long>>() {}.type
+            gson.fromJson(json, type) ?: emptyMap()
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
+    /**
+     * 获取指定歌单的播放次数
+     */
+    fun getPlayCount(context: Context, playlistId: String): Long {
+        return getPlayCounts(context)[playlistId] ?: 0L
+    }
+
+    /**
+     * 歌单被播放一次，播放次数 +1
+     */
+    fun incrementPlayCount(context: Context, playlistId: String) {
+        val counts = getPlayCounts(context).toMutableMap()
+        counts[playlistId] = (counts[playlistId] ?: 0L) + 1
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_PLAYLIST_PLAY_COUNTS, gson.toJson(counts))
+            .apply()
+    }
+
+    // ========== 歌单排序模式 ==========
+
+    /**
+     * 是否按播放次数对歌单排序
+     */
+    fun isPlaylistSortedByPlays(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_PLAYLIST_SORT_BY_PLAYS, false)
+    }
+
+    /**
+     * 设置是否按播放次数对歌单排序
+     */
+    fun setPlaylistSortedByPlays(context: Context, value: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_PLAYLIST_SORT_BY_PLAYS, value)
             .apply()
     }
 }

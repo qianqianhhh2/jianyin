@@ -21,6 +21,7 @@ object DownloadSettingsStore {
     private const val KEY_LYRIC_SOURCE = "lyric_source" // 0: 内嵌, 1: 网络
     private const val KEY_DARK_MODE = "dark_mode" // 0: 跟随系统, 1: 浅色, 2: 深色
     private const val KEY_FADE_ENABLED = "fade_enabled"
+    private const val KEY_FADE_DURATION = "fade_duration"                   // 淡入淡出时长(ms)
     private const val KEY_AUTO_CACHE_ENABLED = "auto_cache_enabled"
     private const val KEY_DEFAULT_MUSIC_OPENER = "default_music_opener"
     private const val KEY_KEEP_PLAYLIST_ON_EXIT = "keep_playlist_on_exit"    // 离开后保留列表
@@ -65,6 +66,9 @@ object DownloadSettingsStore {
 
     private val _fadeEnabledFlow = MutableStateFlow(false)
     val fadeEnabledFlow: StateFlow<Boolean> = _fadeEnabledFlow.asStateFlow()
+
+    private val _fadeDurationFlow = MutableStateFlow(500L) // 淡入淡出时长(ms)，默认500
+    val fadeDurationFlow: StateFlow<Long> = _fadeDurationFlow.asStateFlow()
 
     private val _themeSourceFlow = MutableStateFlow(0) // 0: 内置, 1: 取色
     val themeSourceFlow: StateFlow<Int> = _themeSourceFlow.asStateFlow()
@@ -242,6 +246,23 @@ object DownloadSettingsStore {
 
     fun initFadeEnabled(context: Context) {
         _fadeEnabledFlow.value = isFadeEnabled(context)
+    }
+
+    fun getFadeDuration(context: Context): Long {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getLong(KEY_FADE_DURATION, 500L)
+    }
+
+    fun setFadeDuration(context: Context, durationMs: Long) {
+        val safeValue = durationMs.coerceIn(100L, 3000L)
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putLong(KEY_FADE_DURATION, safeValue)
+            .apply()
+        _fadeDurationFlow.value = safeValue
+    }
+
+    fun initFadeDuration(context: Context) {
+        _fadeDurationFlow.value = getFadeDuration(context)
     }
 
     fun isAutoCacheEnabled(context: Context): Boolean {

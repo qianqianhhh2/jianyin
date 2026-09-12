@@ -587,6 +587,122 @@ fun LyricFontSizeDialog(
 }
 
 @Composable
+fun FadeDurationDialog(
+    show: Boolean,
+    onDismiss: () -> Unit,
+    fadeDuration: Long,
+    onFadeDurationChange: (Long) -> Unit,
+    fadeEnabled: Boolean,
+    onFadeEnabledChange: (Boolean) -> Unit
+) {
+    val context = LocalContext.current
+    val colorScheme = MaterialTheme.colorScheme
+    if (show) {
+        val tempDuration = remember { mutableFloatStateOf(fadeDuration.toFloat()) }
+        val lastDurationValue = remember { mutableFloatStateOf(tempDuration.floatValue) }
+
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("播放淡入淡出") },
+            text = {
+                Column {
+                    // 启用开关
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("启用淡入淡出", fontSize = 15.sp, color = colorScheme.onSurface)
+                            Text("播放/暂停时音量渐变", fontSize = 12.sp, color = colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = fadeEnabled,
+                            onCheckedChange = onFadeEnabledChange
+                        )
+                    }
+                    Spacer(Modifier.height(16.dp))
+
+                    // 时长拖动条
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("0.1s", fontSize = 12.sp, color = colorScheme.onSurfaceVariant)
+                        Slider(
+                            value = tempDuration.floatValue,
+                            onValueChange = { newValue ->
+                                // 每100ms一个档位
+                                val steppedValue = (newValue.roundToInt() / 100 * 100)
+                                    .toFloat()
+                                    .coerceIn(100f, 3000f)
+                                tempDuration.floatValue = steppedValue
+
+                                if (tempDuration.floatValue != lastDurationValue.floatValue) {
+                                    lastDurationValue.floatValue = tempDuration.floatValue
+                                    VibrationManager.tick(context)
+                                }
+                            },
+                            valueRange = 100f..3000f,
+                            steps = 28, // 100到3000，步长100，共30个值，steps=28
+                            modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+                            colors = SliderDefaults.colors(
+                                activeTrackColor = colorScheme.primary,
+                                thumbColor = colorScheme.primary
+                            )
+                        )
+                        Text("3s", fontSize = 12.sp, color = colorScheme.onSurfaceVariant)
+                    }
+
+                    // 当前值显示
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            "当前: ${tempDuration.floatValue.toInt()}ms",
+                            fontSize = 14.sp,
+                            color = colorScheme.primary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    // 恢复默认按钮
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        TextButton(onClick = {
+                            tempDuration.floatValue = 500f
+                        }) {
+                            Text(
+                                "恢复默认",
+                                fontSize = 13.sp,
+                                color = colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onFadeDurationChange(tempDuration.floatValue.toLong())
+                    DownloadSettingsStore.setFadeDuration(context, tempDuration.floatValue.toLong())
+                    onDismiss()
+                }) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) {
+                    Text("取消")
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    }
+}
+
+@Composable
 fun GradientBrightnessDialog(
     show: Boolean,
     onDismiss: () -> Unit,

@@ -142,6 +142,12 @@ fun MyMusicScreenV2(
     var activePlaylist by remember { mutableStateOf<UserSyncedPlaylist?>(null) }
     var isLoadingSongs by remember { mutableStateOf(false) }
 
+    // 歌单排序模式：true=按播放次数，false=手动顺序
+    var sortPlaylistsByPlays by remember {
+        mutableStateOf(PlaylistDataStore.isPlaylistSortedByPlays(context))
+    }
+    var showPlaylistSortMenu by remember { mutableStateOf(false) }
+
     // 最近播放详情页状态
     var activeRecentPlaylist by remember { mutableStateOf<List<Song>?>(null) }
 
@@ -200,6 +206,12 @@ fun MyMusicScreenV2(
             DownloadSettingsStore.isFadeEnabled(context)
         )
     }
+    var fadeDuration by remember {
+        mutableStateOf(
+            DownloadSettingsStore.getFadeDuration(context)
+        )
+    }
+    var showFadeDurationDialog by remember { mutableStateOf(false) }
 
 
     // 自动缓存设置
@@ -360,6 +372,18 @@ fun MyMusicScreenV2(
     LaunchedEffect(vm.playlistUpdateTrigger.intValue) {
         syncedPlaylists.clear()
         syncedPlaylists.addAll(PlaylistDataStore.getAll(context))
+    }
+
+    // 歌单显示列表：按播放次数排序或保持手动顺序
+    val displayPlaylists by remember {
+        derivedStateOf {
+            if (sortPlaylistsByPlays) {
+                val counts = PlaylistDataStore.getPlayCounts(context)
+                syncedPlaylists.sortedByDescending { counts[it.id] ?: 0L }
+            } else {
+                syncedPlaylists.toList()
+            }
+        }
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
@@ -655,8 +679,46 @@ fun MyMusicScreenV2(
                             Spacer(Modifier.width(8.dp))
                             Text("我的歌单", color = colorScheme.onBackground, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                         }
-                        IconButton(onClick = { showAddDialog = true }) {
-                            Icon(Icons.Default.Add, null, tint = colorScheme.primary)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box {
+                                IconButton(onClick = { showPlaylistSortMenu = true }) {
+                                    Icon(Icons.Default.Sort, null, tint = colorScheme.primary)
+                                }
+                                DropdownMenu(
+                                    expanded = showPlaylistSortMenu,
+                                    onDismissRequest = { showPlaylistSortMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("手动顺序") },
+                                        trailingIcon = {
+                                            if (!sortPlaylistsByPlays) {
+                                                Icon(Icons.Default.Check, null, tint = colorScheme.primary)
+                                            }
+                                        },
+                                        onClick = {
+                                            sortPlaylistsByPlays = false
+                                            PlaylistDataStore.setPlaylistSortedByPlays(context, false)
+                                            showPlaylistSortMenu = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("按播放次数") },
+                                        trailingIcon = {
+                                            if (sortPlaylistsByPlays) {
+                                                Icon(Icons.Default.Check, null, tint = colorScheme.primary)
+                                            }
+                                        },
+                                        onClick = {
+                                            sortPlaylistsByPlays = true
+                                            PlaylistDataStore.setPlaylistSortedByPlays(context, true)
+                                            showPlaylistSortMenu = false
+                                        }
+                                    )
+                                }
+                            }
+                            IconButton(onClick = { showAddDialog = true }) {
+                                Icon(Icons.Default.Add, null, tint = colorScheme.primary)
+                            }
                         }
                     }
                 }
@@ -670,9 +732,11 @@ fun MyMusicScreenV2(
                         )
                     }
                 } else {
-                    items(syncedPlaylists) { playlist ->
+                    val counts = if (sortPlaylistsByPlays) PlaylistDataStore.getPlayCounts(context) else emptyMap()
+                    items(displayPlaylists) { playlist ->
                         PlaylistItemV6(
                             playlist = playlist,
+                            playCount = counts[playlist.id] ?: PlaylistDataStore.getPlayCount(context, playlist.id),
                             onClick = {
                                 activePlaylist = playlist
                             },
@@ -2986,7 +3050,7 @@ fun MyMusicScreenV2(
                             SettingsItem("音质设置", Icons.Default.MusicNote, "下载和播放音质选项", "quality"),
                             SettingsItem("本地音乐歌词来源", Icons.Default.LibraryMusic, if (selectedLyricSource == 0) "内嵌" else "网络", "lyric"),
                             SettingsItem("全屏播放器设置", Icons.Default.Fullscreen, "歌词字体、亮度、屏幕常亮等", "player"),
-                            SettingsItem("歌曲淡入淡出", Icons.Default.GraphicEq, "播放暂停时音量渐变", "fade"),
+                            SettingsItem("歌曲淡入淡出", Icons.Default.GraphicEq, if (fadeEnabled) "播放暂停时音量渐变 · ${fadeDuration}ms" else "点击设置与时长", "fade"),
                             SettingsItem("自动缓存", Icons.Default.Download, "根据歌曲播放次数，自动缓存歌曲", "auto_cache"),
                             SettingsItem("触感反馈", Icons.Default.Vibration, "按钮点击、操作完成等震动反馈", "vibration"),
                             SettingsItem("高级效果", Icons.Default.BlurLinear, "将为组件添加模糊效果", "haze"),
@@ -3307,6 +3371,10 @@ fun MyMusicScreenV2(
                                                 showThemeDialog = true
                                             }
                                             "startup" -> showStartupSettingsDialog = true
+                                            "fade" -> {
+                                                fadeDuration = DownloadSettingsStore.getFadeDuration(context)
+                                                showFadeDurationDialog = true
+                                            }
                                             "backup_audio" -> {
                                                 backupAudioApiUrl = DownloadSettingsStore.getBackupAudioApiUrl(context)
                                                 showBackupAudioDialog = true
@@ -3363,6 +3431,18 @@ fun MyMusicScreenV2(
                 onDismiss = { showGradientBrightnessDialog = false },
                 gradientBrightnessMultiplier = gradientBrightnessMultiplier,
                 onGradientBrightnessMultiplierChange = { gradientBrightnessMultiplier = it }
+            )
+
+            FadeDurationDialog(
+                show = showFadeDurationDialog,
+                onDismiss = { showFadeDurationDialog = false },
+                fadeDuration = fadeDuration,
+                onFadeDurationChange = { fadeDuration = it },
+                fadeEnabled = fadeEnabled,
+                onFadeEnabledChange = {
+                    fadeEnabled = it
+                    DownloadSettingsStore.setFadeEnabled(context, it)
+                }
             )
 
             DarkModeDialog(
